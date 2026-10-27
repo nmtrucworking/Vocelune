@@ -1,21 +1,22 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Volume2,
   Undo2,
   Sparkles,
   CheckCircle2,
-  HelpCircle,
   RotateCcw,
-  BookOpen,
-  ArrowRight,
   Flame,
   Check,
   X,
   Keyboard,
-  Shuffle,
-  Smile,
+  ArrowRight,
+  HelpCircle,
+  Eye,
+  Layers,
+  Zap,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { Card, VocabItem, FSRSRating, StudyMode } from '@/types';
@@ -31,8 +32,11 @@ export function StudyConsole() {
   // Create an active queue from due cards (or all cards if none due)
   const [queue, setQueue] = useState<Card[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isRevealed, setIsRevealed] = useState(false);
+  const [isFlipped, setIsFlipped] = useState(false);
   const [mode, setMode] = useState<StudyMode>('flashcard');
+
+  // Direction for card slide animation (1 = next, -1 = prev)
+  const [slideDirection, setSlideDirection] = useState<number>(1);
 
   // Typed mode state
   const [typedInput, setTypedInput] = useState('');
@@ -44,7 +48,6 @@ export function StudyConsole() {
   // Session completion stats
   const [completedCount, setCompletedCount] = useState(0);
   const [startTime, setStartTime] = useState<number>(Date.now());
-  const [cardAnimationKey, setCardAnimationKey] = useState(0);
 
   // Initialize queue
   useEffect(() => {
@@ -78,13 +81,13 @@ export function StudyConsole() {
     return all;
   }, [currentVocab, vocabItems]);
 
-  // Reveal answer
-  const handleReveal = useCallback(() => {
-    setIsRevealed(true);
-    if (settings.autoPronounce && currentVocab) {
+  // Reveal answer (Flip card)
+  const handleFlip = useCallback(() => {
+    setIsFlipped((prev) => !prev);
+    if (!isFlipped && settings.autoPronounce && currentVocab) {
       speakWord(currentVocab.word, currentVocab.dialect || settings.englishDialect);
     }
-  }, [settings.autoPronounce, currentVocab, settings.englishDialect]);
+  }, [isFlipped, settings.autoPronounce, currentVocab, settings.englishDialect]);
 
   // Grade action (FSRS rating 1-4)
   const handleGrade = useCallback(
@@ -95,12 +98,12 @@ export function StudyConsole() {
       gradeCard(currentCard.id, rating, durationMs);
 
       setCompletedCount((prev) => prev + 1);
-      setIsRevealed(false);
+      setSlideDirection(1);
+      setIsFlipped(false);
       setTypedInput('');
       setTypedSubmitted(false);
       setSelectedOption(null);
       setStartTime(Date.now());
-      setCardAnimationKey((k) => k + 1);
 
       // Move to next card
       if (currentIndex < queue.length - 1) {
@@ -117,55 +120,67 @@ export function StudyConsole() {
   // Keyboard shortcut listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is typing in an input
+      // Don't intercept if user is typing in input and hasn't submitted yet
       if (
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA'
+        document.activeElement?.tagName === 'INPUT' &&
+        !typedSubmitted &&
+        mode === 'typed'
       ) {
         return;
       }
 
       if (e.code === 'Space') {
         e.preventDefault();
-        if (!isRevealed) {
-          handleReveal();
-        }
-      } else if (isRevealed) {
+        handleFlip();
+      } else if (isFlipped) {
         if (e.key === '1') handleGrade(1);
         if (e.key === '2') handleGrade(2);
         if (e.key === '3') handleGrade(3);
         if (e.key === '4') handleGrade(4);
       }
 
-      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey || !isRevealed)) {
+      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey || !isFlipped)) {
         if (canUndo) {
           e.preventDefault();
           undoLastReview();
+          setSlideDirection(-1);
           if (currentIndex > 0) setCurrentIndex((prev) => prev - 1);
-          setIsRevealed(false);
-          setCardAnimationKey((k) => k + 1);
+          setIsFlipped(false);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isRevealed, handleReveal, handleGrade, canUndo, undoLastReview, currentIndex]);
+  }, [isFlipped, handleFlip, handleGrade, canUndo, undoLastReview, currentIndex, mode, typedSubmitted]);
 
-  // Handle Typed Submit
+  // Handle Typed Submit: Validate and then flip card to reveal full details
   const handleTypedSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!typedInput.trim()) return;
     setTypedSubmitted(true);
-    handleReveal();
+    setIsFlipped(true);
+    if (settings.autoPronounce && currentVocab) {
+      speakWord(currentVocab.word, currentVocab.dialect || settings.englishDialect);
+    }
   };
 
   // Empty state: All cards done
   if (queue.length === 0 || currentIndex >= queue.length || !currentVocab || !currentCard) {
     return (
-      <div className="max-w-xl mx-auto py-12 px-4 text-center space-y-6 animate-in fade-in zoom-in-95 duration-300">
-        <div className="w-20 h-20 mx-auto rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200 shadow-md animate-bounce">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+        className="max-w-xl mx-auto py-12 px-4 text-center space-y-6"
+      >
+        <motion.div
+          animate={{ scale: [1, 1.08, 1], rotate: [0, 5, -5, 0] }}
+          transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
+          className="w-20 h-20 mx-auto rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center border-2 border-emerald-200 shadow-lg"
+        >
           <CheckCircle2 className="w-10 h-10 stroke-[2.2]" />
-        </div>
+        </motion.div>
 
         <div className="space-y-2">
           <h2 className="text-3xl font-extrabold text-brand-ink">
@@ -173,20 +188,22 @@ export function StudyConsole() {
           </h2>
           <p className="text-sm text-text-secondary max-w-md mx-auto leading-relaxed">
             {completedCount > 0
-              ? `Bạn đã hoàn thành ${completedCount} lượt truy hồi chất lượng cao. FSRS đã cập nhật độ ổn định và xếp lịch quay lại tối ưu.`
+              ? `Tuyệt vời! Bạn đã hoàn thành ${completedCount} lượt truy hồi chất lượng cao. Thuật toán FSRS-7 đã ghi nhận và tối ưu thời điểm quay lại.`
               : 'Hiện không có thẻ nào đến hạn. Bạn có thể thêm từ mới hoặc ôn luyện tự do trong Thư viện.'}
           </p>
         </div>
 
         {completedCount > 0 && (
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-control bg-brand-primarySoft text-brand-primary text-xs font-semibold shadow-xs">
-            <Sparkles className="w-4 h-4 text-brand-primary" />
-            <span>Lịch thích ứng FSRS-7 đã ghi nhận hoàn tất</span>
+            <Sparkles className="w-4 h-4 text-brand-primary animate-spin" />
+            <span>Đã đồng bộ lịch ôn tập FSRS-7</span>
           </div>
         )}
 
         <div className="flex items-center justify-center gap-3 pt-4">
-          <button
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => {
               setQueue([
                 ...vocabItems.map((v) => ({
@@ -205,17 +222,16 @@ export function StudyConsole() {
                 })),
               ]);
               setCurrentIndex(0);
-              setIsRevealed(false);
+              setIsFlipped(false);
               setCompletedCount(0);
-              setCardAnimationKey((k) => k + 1);
             }}
-            className="px-5 py-3 bg-brand-primary text-white hover:bg-brand-primaryHover font-semibold text-xs rounded-control transition-all shadow-md flex items-center gap-2 active:scale-95"
+            className="px-5 py-3 bg-brand-primary text-white hover:bg-brand-primaryHover font-semibold text-xs rounded-control transition-colors shadow-md flex items-center gap-2"
           >
             <RotateCcw className="w-4 h-4" />
             <span>Ôn luyện tự do ({vocabItems.length} từ)</span>
-          </button>
+          </motion.button>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
@@ -224,310 +240,423 @@ export function StudyConsole() {
     typedInput.trim().toLowerCase() === currentVocab.word.trim().toLowerCase();
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
-      {/* Top Session Progress Bar */}
+    <div className="max-w-2xl mx-auto space-y-6">
+      {/* Top Header: Progress & Mode Switcher */}
       <div className="flex items-center justify-between px-1 text-xs">
         <div className="flex items-center gap-2 font-medium text-text-secondary">
-          <span className="font-semibold text-brand-ink">
+          <span className="font-bold text-brand-ink">
             Thẻ {currentIndex + 1}
           </span>
           <span>/</span>
           <span>{queue.length}</span>
-          <span className="px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-brand-primarySoft text-brand-primary">
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-brand-primarySoft text-brand-primary">
             {currentCard.state}
           </span>
         </div>
 
         {/* Study Mode Selector */}
         <div className="flex items-center bg-surface-base p-1 rounded-control border border-slate-200/80 shadow-xs">
-          <button
-            onClick={() => {
-              setMode('flashcard');
-              setIsRevealed(false);
-            }}
-            className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-all duration-150 ${
-              mode === 'flashcard'
-                ? 'bg-brand-primary text-white shadow-xs'
-                : 'text-text-secondary hover:text-brand-ink'
-            }`}
-          >
-            Flashcard
-          </button>
-          <button
-            onClick={() => {
-              setMode('typed');
-              setIsRevealed(false);
-            }}
-            className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-all duration-150 ${
-              mode === 'typed'
-                ? 'bg-brand-primary text-white shadow-xs'
-                : 'text-text-secondary hover:text-brand-ink'
-            }`}
-          >
-            Gõ từ
-          </button>
-          <button
-            onClick={() => {
-              setMode('mcq');
-              setIsRevealed(false);
-            }}
-            className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-all duration-150 ${
-              mode === 'mcq'
-                ? 'bg-brand-primary text-white shadow-xs'
-                : 'text-text-secondary hover:text-brand-ink'
-            }`}
-          >
-            Trắc nghiệm
-          </button>
-          <button
-            onClick={() => {
-              setMode('listening');
-              setIsRevealed(false);
-            }}
-            className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-all duration-150 ${
-              mode === 'listening'
-                ? 'bg-brand-primary text-white shadow-xs'
-                : 'text-text-secondary hover:text-brand-ink'
-            }`}
-          >
-            Luyện nghe
-          </button>
+          {(['flashcard', 'typed', 'mcq', 'listening'] as StudyMode[]).map((m) => {
+            const labels: Record<StudyMode, string> = {
+              flashcard: 'Lật thẻ',
+              typed: 'Gõ từ',
+              mcq: 'Trắc nghiệm',
+              listening: 'Luyện nghe',
+            };
+            const isActive = mode === m;
+            return (
+              <button
+                key={m}
+                onClick={() => {
+                  setMode(m);
+                  setIsFlipped(false);
+                  setTypedSubmitted(false);
+                  setTypedInput('');
+                }}
+                className={`relative px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                  isActive ? 'text-white' : 'text-text-secondary hover:text-brand-ink'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="studyModePill"
+                    className="absolute inset-0 bg-brand-primary rounded-lg shadow-xs"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <span className="relative z-10">{labels[m]}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Progress Bar with smooth fill animation */}
-      <div className="w-full h-1.5 bg-slate-200/60 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-brand-primary rounded-full transition-all duration-500 ease-out"
-          style={{ width: `${((currentIndex + 1) / queue.length) * 100}%` }}
+      {/* Animated Progress Bar */}
+      <div className="w-full h-2 bg-slate-200/60 rounded-full overflow-hidden p-0.5 shadow-inner">
+        <motion.div
+          className="h-full bg-gradient-to-r from-brand-primary to-indigo-500 rounded-full"
+          initial={{ width: 0 }}
+          animate={{ width: `${((currentIndex + 1) / queue.length) * 100}%` }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
         />
       </div>
 
-      {/* Main Study Card with 3D Flip & Entry Slide Animation */}
-      <div
-        key={cardAnimationKey}
-        className="perspective-1000 min-h-[380px] w-full animate-in fade-in slide-in-from-bottom-2 duration-200"
-      >
-        <div
-          className={`relative w-full min-h-[380px] bg-surface-base border border-slate-200/90 rounded-card shadow-card p-6 md:p-8 flex flex-col justify-between select-none card-flip-transition ${
-            mode === 'flashcard' && isRevealed ? 'ring-2 ring-brand-primary/20' : ''
-          }`}
-        >
-          {/* Card Header metadata */}
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">
-                {currentVocab.cefr}
-              </span>
-              <span className="text-xs font-medium text-text-secondary italic">
-                ({currentVocab.partOfSpeech})
-              </span>
-            </div>
-
-            {/* High-fidelity Audio Pronunciation with Equalizer Wave */}
-            <AudioButton
-              text={currentVocab.word}
-              dialect={currentVocab.dialect || settings.englishDialect}
-              showLabel
-              size="sm"
-            />
-          </div>
-
-          {/* Question Cue / Active Recall Area */}
-          <div className="py-6 flex-1 flex flex-col items-center justify-center text-center space-y-4">
-            {mode === 'listening' ? (
-              <div className="space-y-4">
-                <div className="inline-block p-4 rounded-full bg-brand-primarySoft text-brand-primary animate-glow-pulse">
-                  <AudioButton
-                    text={currentVocab.word}
-                    dialect={currentVocab.dialect || settings.englishDialect}
-                    size="lg"
-                  />
-                </div>
-                <p className="text-xs text-text-secondary">
-                  Nhấn loa để nghe phát âm chuẩn studio và truy hồi nghĩa tiếng Việt trước khi lật thẻ
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-brand-ink transition-transform hover:scale-[1.02]">
-                  {currentVocab.word}
-                </h2>
-                <p className="text-sm font-mono text-slate-400">
-                  {currentVocab.phonetic}
-                </p>
-              </div>
-            )}
-
-            {/* Mode-Specific Input / Interaction */}
-            {mode === 'typed' && !isRevealed && (
-              <form onSubmit={handleTypedSubmit} className="w-full max-w-sm mt-4 space-y-2">
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Gõ lại chính xác từ tiếng Anh..."
-                  value={typedInput}
-                  onChange={(e) => setTypedInput(e.target.value)}
-                  className="w-full text-center px-4 py-2.5 text-base border-2 border-slate-200 rounded-control focus:outline-none focus:border-brand-primary font-medium shadow-xs"
-                />
-                <button
-                  type="submit"
-                  className="w-full py-2 bg-slate-900 text-white rounded-control text-xs font-semibold hover:bg-slate-800 transition-colors shadow-xs active:scale-[0.98]"
-                >
-                  Kiểm tra (Enter)
-                </button>
-              </form>
-            )}
-
-            {mode === 'mcq' && !isRevealed && (
-              <div className="w-full max-w-md grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-4">
-                {mcqOptions.map((opt, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setSelectedOption(opt);
-                      handleReveal();
-                    }}
-                    className="p-3 text-left text-xs font-medium rounded-control border border-slate-200 hover:border-brand-primary hover:bg-brand-primarySoft/40 transition-all hover:scale-[1.01] active:scale-[0.99]"
-                  >
-                    <span className="font-bold text-slate-400 mr-1.5">
-                      {String.fromCharCode(65 + i)}.
-                    </span>
-                    {opt}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Reveal Result Area with Smooth Fade & Scale Animation */}
-            {isRevealed && (
-              <div className="w-full space-y-4 pt-4 border-t border-slate-100 text-left animate-in fade-in slide-in-from-top-1 duration-200">
-                {/* Meaning & Definition */}
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-brand-primary">
-                    Nghĩa tiếng Việt
-                  </span>
-                  <p className="text-xl font-bold text-brand-ink">
-                    {currentVocab.meaningVi}
-                  </p>
-                </div>
-
-                {currentVocab.definitionEn && (
-                  <div className="space-y-0.5">
-                    <span className="text-[11px] font-medium text-text-secondary">
-                      Định nghĩa tiếng Anh
-                    </span>
-                    <p className="text-xs text-brand-ink font-normal leading-relaxed">
-                      {currentVocab.definitionEn}
-                    </p>
-                  </div>
-                )}
-
-                {/* Example sentence */}
-                {currentVocab.exampleEn && (
-                  <div className="p-3.5 rounded-control bg-slate-50 border border-slate-100 text-xs space-y-1">
-                    <p className="italic text-brand-ink font-medium">
-                      &ldquo;{currentVocab.exampleEn}&rdquo;
-                    </p>
-                    {currentVocab.exampleVi && (
-                      <p className="text-text-secondary text-[11px]">
-                        {currentVocab.exampleVi}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Typed validation feedback */}
-                {mode === 'typed' && (
-                  <div
-                    className={`p-3 rounded-control text-xs font-medium flex items-center gap-2 ${
-                      isTypedCorrect
-                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 animate-in zoom-in-95'
-                        : 'bg-rose-50 text-rose-800 border border-rose-200 animate-in shake'
-                    }`}
-                  >
-                    {isTypedCorrect ? (
-                      <>
-                        <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
-                        <span>Chính xác tuyệt đối!</span>
-                      </>
-                    ) : (
-                      <>
-                        <X className="w-4 h-4 text-rose-600 stroke-[3]" />
-                        <span>Bạn đã gõ: &ldquo;{typedInput || '(trống)'}&rdquo;</span>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Bottom Action Area (Gate: Show Answer -> 4 FSRS Ratings) */}
-          <div className="pt-4 border-t border-slate-100">
-            {!isRevealed ? (
-              <button
-                onClick={handleReveal}
-                className="w-full py-3.5 bg-brand-primary text-white font-bold text-sm rounded-control hover:bg-brand-primaryHover shadow-md transition-all duration-150 flex items-center justify-center gap-2 active:scale-[0.98]"
+      {/* 3D Flappable Flashcard Canvas */}
+      <div className="relative min-h-[380px] w-full" style={{ perspective: 1200 }}>
+        <AnimatePresence mode="wait" custom={slideDirection}>
+          <motion.div
+            key={currentCard.id}
+            custom={slideDirection}
+            initial={{ opacity: 0, x: slideDirection * 60, scale: 0.96 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -slideDirection * 60, scale: 0.96 }}
+            transition={{ duration: 0.28, ease: [0.23, 1, 0.32, 1] }}
+            className="w-full"
+          >
+            {/* The 3D Flip Container */}
+            <motion.div
+              animate={{ rotateY: isFlipped ? 180 : 0 }}
+              transition={{ duration: 0.45, ease: [0.23, 1, 0.32, 1] }}
+              style={{ transformStyle: 'preserve-3d' }}
+              className="relative w-full min-h-[380px] rounded-card shadow-card cursor-pointer"
+              onClick={() => {
+                // Clicking the card flips it if not typing
+                if (mode !== 'typed' || typedSubmitted) {
+                  handleFlip();
+                }
+              }}
+            >
+              {/* ================= CARD FRONT (Face 1) ================= */}
+              <div
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                }}
+                className={`absolute inset-0 bg-surface-base border border-slate-200/90 rounded-card p-6 md:p-8 flex flex-col justify-between select-none ${
+                  isFlipped ? 'pointer-events-none' : ''
+                }`}
               >
-                <span>Xem đáp án (Active Recall)</span>
-                <kbd className="px-2 py-0.5 text-[10px] font-mono bg-white/20 rounded text-white font-normal">
-                  Space
-                </kbd>
-              </button>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-[11px] text-text-secondary px-1">
-                  <span>Đánh giá mức độ truy hồi để FSRS cập nhật chu kỳ:</span>
-                  <span className="flex items-center gap-1 font-mono">
-                    <Keyboard className="w-3.5 h-3.5" />
-                    <span>Phím 1, 2, 3, 4</span>
-                  </span>
+                {/* Front Top Metadata Bar */}
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-brand-primarySoft text-brand-primary">
+                      {currentVocab.cefr}
+                    </span>
+                    <span className="text-xs font-semibold text-text-secondary italic">
+                      ({currentVocab.partOfSpeech})
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                    <span className="text-[11px] bg-slate-100 px-2 py-0.5 rounded-full font-mono">
+                      Mặt trước: Câu hỏi
+                    </span>
+                  </div>
                 </div>
 
-                {/* 4 FSRS Ratings Grid with Spring scale hover */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {intervalPreviews.map((preview) => {
-                    const ratingColors = {
-                      1: 'hover:border-rose-400 hover:bg-rose-50/70 text-rose-700 active:bg-rose-100',
-                      2: 'hover:border-amber-400 hover:bg-amber-50/70 text-amber-700 active:bg-amber-100',
-                      3: 'hover:border-blue-400 hover:bg-blue-50/70 text-blue-700 active:bg-blue-100',
-                      4: 'hover:border-emerald-400 hover:bg-emerald-50/70 text-emerald-700 active:bg-emerald-100',
-                    };
+                {/* Front Question Content: Context-aware by Mode */}
+                <div className="py-6 flex-1 flex flex-col items-center justify-center text-center space-y-4">
+                  {/* Mode 1: Flashcard -> Show English Word */}
+                  {mode === 'flashcard' && (
+                    <div className="space-y-3">
+                      <div className="inline-flex items-center gap-2">
+                        <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-brand-ink">
+                          {currentVocab.word}
+                        </h2>
+                        <AudioButton
+                          text={currentVocab.word}
+                          dialect={currentVocab.dialect || settings.englishDialect}
+                          size="md"
+                        />
+                      </div>
+                      <p className="text-sm font-mono text-slate-400">
+                        {currentVocab.phonetic}
+                      </p>
+                      <p className="text-xs text-slate-400 pt-2 flex items-center justify-center gap-1">
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Hãy tự gợi nhớ nghĩa tiếng Việt trong đầu</span>
+                      </p>
+                    </div>
+                  )}
 
-                    return (
-                      <button
-                        key={preview.rating}
-                        onClick={() => handleGrade(preview.rating)}
-                        className={`p-3 rounded-control border border-slate-200 bg-surface-base text-left transition-all duration-150 shadow-xs flex flex-col justify-between hover:scale-[1.03] active:scale-95 ${
-                          ratingColors[preview.rating]
-                        }`}
+                  {/* Mode 2: Typed -> Show Meaning Cue, Prompt to recall English word! */}
+                  {mode === 'typed' && (
+                    <div className="w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-brand-primary">
+                          Gợi ý nghĩa tiếng Việt
+                        </span>
+                        <h3 className="text-2xl font-extrabold text-brand-ink">
+                          {currentVocab.meaningVi}
+                        </h3>
+                        <p className="text-xs text-text-secondary italic">
+                          ({currentVocab.partOfSpeech}) • {currentVocab.word.length} ký tự
+                          {currentVocab.word.length > 3 && (
+                            <span className="font-mono text-slate-400 ml-1.5">
+                              [ {currentVocab.word[0]}...{currentVocab.word[currentVocab.word.length - 1]} ]
+                            </span>
+                          )}
+                        </p>
+                      </div>
+
+                      <form onSubmit={handleTypedSubmit} className="space-y-2 pt-2">
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="Gõ từ tiếng Anh tương ứng..."
+                          value={typedInput}
+                          onChange={(e) => setTypedInput(e.target.value)}
+                          className="w-full text-center px-4 py-3 text-base border-2 border-slate-200 rounded-control focus:outline-none focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 font-bold tracking-wide shadow-xs"
+                        />
+                        <button
+                          type="submit"
+                          className="w-full py-2.5 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control text-xs font-bold transition-all shadow-sm active:scale-[0.98]"
+                        >
+                          Kiểm tra & Lật thẻ (Enter)
+                        </button>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Mode 3: Multiple Choice (MCQ) */}
+                  {mode === 'mcq' && (
+                    <div className="w-full max-w-md space-y-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="space-y-1">
+                        <h2 className="text-3xl font-extrabold text-brand-ink">
+                          {currentVocab.word}
+                        </h2>
+                        <p className="text-xs font-mono text-slate-400">{currentVocab.phonetic}</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
+                        {mcqOptions.map((opt, i) => (
+                          <motion.button
+                            key={i}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => {
+                              setSelectedOption(opt);
+                              setIsFlipped(true);
+                              if (settings.autoPronounce && currentVocab) {
+                                speakWord(currentVocab.word, currentVocab.dialect || settings.englishDialect);
+                              }
+                            }}
+                            className="p-3 text-left text-xs font-semibold rounded-control border border-slate-200 hover:border-brand-primary hover:bg-brand-primarySoft/40 transition-all shadow-xs"
+                          >
+                            <span className="font-bold text-slate-400 mr-2">
+                              {String.fromCharCode(65 + i)}.
+                            </span>
+                            {opt}
+                          </motion.button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Mode 4: Listening -> Audio Visualizer Orb */}
+                  {mode === 'listening' && (
+                    <div className="space-y-4" onClick={(e) => e.stopPropagation()}>
+                      <motion.div
+                        animate={{ scale: [1, 1.05, 1] }}
+                        transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
+                        className="inline-block p-4 rounded-full bg-brand-primarySoft text-brand-primary shadow-elevated"
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs">{preview.label}</span>
-                          <kbd className="px-1.5 py-0.2 text-[10px] font-mono bg-slate-100 rounded text-slate-500 font-bold">
-                            {preview.rating}
-                          </kbd>
-                        </div>
-                        <div className="mt-1.5 flex items-baseline justify-between">
-                          <span className="text-[10px] text-text-secondary line-clamp-1">
-                            {preview.description}
-                          </span>
-                          <span className="text-xs font-mono font-bold text-brand-ink">
-                            {preview.intervalText}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
+                        <AudioButton
+                          text={currentVocab.word}
+                          dialect={currentVocab.dialect || settings.englishDialect}
+                          size="lg"
+                        />
+                      </motion.div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-brand-ink">
+                          Nhấn loa để nghe phát âm chuẩn studio
+                        </p>
+                        <p className="text-xs text-text-secondary">
+                          Thử gợi nhớ từ vựng và nghĩa tiếng Việt trước khi lật đáp án
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Front Footer: Hint & Flip Button */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[11px] text-text-secondary flex items-center gap-1">
+                    <Keyboard className="w-3.5 h-3.5" />
+                    <span>Nhấn <strong>Space</strong> hoặc chạm vào thẻ để lật</span>
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleFlip();
+                    }}
+                    className="px-4 py-2 bg-brand-primary text-white text-xs font-bold rounded-control hover:bg-brand-primaryHover transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                  >
+                    <span>Lật xem đáp án</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
-            )}
-          </div>
-        </div>
+
+              {/* ================= CARD BACK (Face 2: Flipped 180deg) ================= */}
+              <div
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                  transform: 'rotateY(180deg)',
+                }}
+                className={`absolute inset-0 bg-surface-base border-2 border-brand-primary/40 rounded-card p-6 md:p-8 flex flex-col justify-between select-none shadow-elevated ${
+                  !isFlipped ? 'pointer-events-none' : ''
+                }`}
+              >
+                {/* Back Top Metadata Bar */}
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-brand-primarySoft text-brand-primary">
+                      {currentVocab.cefr}
+                    </span>
+                    <span className="text-xs font-semibold text-brand-ink">
+                      {currentVocab.word}
+                    </span>
+                    <span className="text-xs font-mono text-slate-400">
+                      {currentVocab.phonetic}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <AudioButton
+                      text={currentVocab.word}
+                      dialect={currentVocab.dialect || settings.englishDialect}
+                      size="sm"
+                      showLabel
+                    />
+                  </div>
+                </div>
+
+                {/* Back Revealed Knowledge Body */}
+                <div className="py-4 flex-1 space-y-3.5 text-left overflow-y-auto">
+                  {/* Typed verification banner if in typed mode */}
+                  {mode === 'typed' && typedSubmitted && (
+                    <motion.div
+                      initial={{ scale: 0.95, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className={`p-3 rounded-control text-xs font-semibold flex items-center gap-2.5 ${
+                        isTypedCorrect
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          : 'bg-rose-50 text-rose-800 border border-rose-200'
+                      }`}
+                    >
+                      {isTypedCorrect ? (
+                        <>
+                          <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
+                          <span>Chính xác tuyệt đối! Bạn đã nhớ đúng 100% chính tả.</span>
+                        </>
+                      ) : (
+                        <>
+                          <X className="w-4 h-4 text-rose-600 stroke-[3]" />
+                          <span>
+                            Bạn đã gõ: <strong className="underline">&ldquo;{typedInput}&rdquo;</strong> (Đáp án đúng: <strong>{currentVocab.word}</strong>)
+                          </span>
+                        </>
+                      )}
+                    </motion.div>
+                  )}
+
+                  {/* Primary Meaning in Vietnamese */}
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-brand-primary">
+                      Nghĩa tiếng Việt
+                    </span>
+                    <h3 className="text-2xl font-extrabold text-brand-ink">
+                      {currentVocab.meaningVi}
+                    </h3>
+                  </div>
+
+                  {/* English Definition */}
+                  {currentVocab.definitionEn && (
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-semibold text-text-secondary">
+                        Định nghĩa tiếng Anh
+                      </span>
+                      <p className="text-xs text-brand-ink leading-relaxed">
+                        {currentVocab.definitionEn}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Context Example */}
+                  {currentVocab.exampleEn && (
+                    <div className="p-3.5 rounded-control bg-slate-50 border border-slate-100 text-xs space-y-1">
+                      <p className="italic text-brand-ink font-semibold">
+                        &ldquo;{currentVocab.exampleEn}&rdquo;
+                      </p>
+                      {currentVocab.exampleVi && (
+                        <p className="text-text-secondary text-[11px]">
+                          {currentVocab.exampleVi}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Back Footer: FSRS 4 Rating Choices with Animated Micro-interactions */}
+                <div className="pt-3 border-t border-slate-100 space-y-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between text-[11px] text-text-secondary px-1">
+                    <span className="font-semibold text-brand-ink">
+                      Đánh giá độ nhớ để FSRS lập lịch:
+                    </span>
+                    <span className="font-mono text-slate-400">
+                      Phím tắt 1, 2, 3, 4
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {intervalPreviews.map((preview) => {
+                      const ratingStyles = {
+                        1: 'hover:border-rose-400 hover:bg-rose-50/70 text-rose-700 bg-rose-50/20',
+                        2: 'hover:border-amber-400 hover:bg-amber-50/70 text-amber-700 bg-amber-50/20',
+                        3: 'hover:border-blue-400 hover:bg-blue-50/70 text-blue-700 bg-blue-50/20',
+                        4: 'hover:border-emerald-400 hover:bg-emerald-50/70 text-emerald-700 bg-emerald-50/20',
+                      };
+
+                      return (
+                        <motion.button
+                          key={preview.rating}
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.96 }}
+                          onClick={() => handleGrade(preview.rating)}
+                          className={`p-2.5 rounded-control border border-slate-200 text-left transition-all shadow-xs flex flex-col justify-between ${
+                            ratingStyles[preview.rating]
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs">{preview.label}</span>
+                            <kbd className="px-1.5 py-0.2 text-[10px] font-mono bg-white border rounded text-slate-500 font-bold shadow-2xs">
+                              {preview.rating}
+                            </kbd>
+                          </div>
+                          <div className="mt-1 flex items-baseline justify-between">
+                            <span className="text-[10px] text-text-secondary line-clamp-1">
+                              {preview.description}
+                            </span>
+                            <span className="text-xs font-mono font-bold text-brand-ink">
+                              {preview.intervalText}
+                            </span>
+                          </div>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      {/* Undo Button (BR-SRS-05 / AC-05) */}
+      {/* Undo Button & Footnote */}
       <div className="flex items-center justify-between px-2 text-xs text-text-secondary">
         <button
           onClick={undoLastReview}
@@ -539,7 +668,7 @@ export function StudyConsole() {
         </button>
 
         <span className="text-[11px] text-slate-400">
-          Mô hình: FSRS-7 • Chuẩn EVLP-SRS-001
+          Mô hình: FSRS-7 • Tỷ lệ mục tiêu: {(settings.desiredRetention * 100).toFixed(0)}%
         </span>
       </div>
     </div>

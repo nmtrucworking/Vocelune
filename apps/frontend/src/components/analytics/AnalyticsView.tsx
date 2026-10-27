@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
+import { motion } from 'framer-motion';
 import {
   TrendingUp,
   Brain,
@@ -10,7 +11,23 @@ import {
   CheckCircle,
   BarChart2,
   Sparkles,
+  PieChart as PieIcon,
+  Activity,
 } from 'lucide-react';
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from 'recharts';
 import { useVocelune } from '@/context/VoceluneContext';
 
 export function AnalyticsView() {
@@ -28,190 +45,368 @@ export function AnalyticsView() {
   const totalReviews = reviewLogs.filter((l) => !l.voidedAt).length;
   const masteredCount = cards.filter((c) => c.stability >= 21).length;
 
-  // Next 7 days due forecast simulation
-  const next7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    const dateStr = d.toISOString().split('T')[0];
-    const dueCount = cards.filter((c) => {
-      const cardDue = c.dueAt.split('T')[0];
-      return cardDue === dateStr;
-    }).length;
+  // 1. FSRS Retrievability Curve Simulation: R(t) = (1 + t / (9 * S))^(-1)
+  const averageStability = useMemo(() => {
+    const scored = cards.filter((c) => c.stability > 0);
+    if (scored.length === 0) return 4.5;
+    return scored.reduce((acc, c) => acc + c.stability, 0) / scored.length;
+  }, [cards]);
 
-    return {
-      date: d.toLocaleDateString('vi-VN', { weekday: 'short', day: 'numeric' }),
-      count: dueCount,
+  const forgettingCurveData = useMemo(() => {
+    const points = [];
+    const S = averageStability;
+    for (let day = 0; day <= 30; day += 2) {
+      // FSRS forgetting power law formula
+      const retrievability = Math.round(Math.pow(1 + day / (9 * S), -1) * 100);
+      points.push({
+        day: `Ngày ${day}`,
+        retrievability,
+        threshold: 90, // Desired retention target
+      });
+    }
+    return points;
+  }, [averageStability]);
+
+  // 2. Next 7 days due forecast
+  const forecastData = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      const count = cards.filter((c) => c.dueAt.split('T')[0] === dateStr).length;
+
+      return {
+        day: d.toLocaleDateString('vi-VN', { weekday: 'short', day: 'numeric' }),
+        cards: count,
+      };
+    });
+  }, [cards]);
+
+  // 3. Card state distribution (Pie Chart)
+  const stateDistributionData = useMemo(() => {
+    const counts = {
+      new: cards.filter((c) => c.state === 'new').length,
+      learning: cards.filter((c) => c.state === 'learning' || c.state === 'relearning').length,
+      review: cards.filter((c) => c.state === 'review').length,
     };
-  });
+
+    return [
+      { name: 'Đang ôn (Review)', value: counts.review, color: '#10B981' },
+      { name: 'Đang học (Learning)', value: counts.learning, color: '#F59E0B' },
+      { name: 'Thẻ mới (New)', value: counts.new, color: '#5949E8' },
+    ];
+  }, [cards]);
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-8 max-w-6xl mx-auto">
       {/* Page Header */}
       <div>
-        <h2 className="text-xl font-bold text-brand-ink">Tiến độ & Phân tích ghi nhớ</h2>
-        <p className="text-xs text-text-secondary mt-1">
-          Theo dõi dữ liệu thực nghiệm (observed recall) và dự báo hồi quy từ mô hình FSRS.
+        <h2 className="text-2xl font-extrabold text-brand-ink">
+          Tiến độ & Phân tích thuật toán FSRS
+        </h2>
+        <p className="text-xs sm:text-sm text-text-secondary mt-1">
+          Quan sát trực quan đường cong lãng quên (Retrievability Decay), tải ôn tập thích ứng và phân bố trạng thái thẻ.
         </p>
       </div>
 
       {/* Top 4 KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1 */}
-        <div className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1">
+        <motion.div
+          whileHover={{ y: -3 }}
+          className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1"
+        >
           <div className="flex items-center justify-between text-xs text-text-secondary font-medium">
             <span>Tỷ lệ nhớ thực nghiệm</span>
             <TrendingUp className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="flex items-baseline gap-2 pt-1">
-            <span className="text-2xl font-extrabold text-brand-ink">
+            <span className="text-3xl font-extrabold text-brand-ink">
               {observedRetention}%
             </span>
             <span className="text-[11px] text-text-secondary font-mono">
               (N={totalReviews})
             </span>
           </div>
-          <p className="text-[11px] text-emerald-700 font-medium">
+          <p className="text-[11px] text-emerald-700 font-semibold">
             Mục tiêu FSRS: {(settings.desiredRetention * 100).toFixed(0)}%
           </p>
-        </div>
+        </motion.div>
 
         {/* KPI 2 */}
-        <div className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1">
+        <motion.div
+          whileHover={{ y: -3 }}
+          className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1"
+        >
           <div className="flex items-center justify-between text-xs text-text-secondary font-medium">
             <span>Chuỗi ngày học</span>
             <Flame className="w-4 h-4 text-amber-500 fill-amber-500" />
           </div>
-          <div className="flex items-baseline gap-2 pt-1">
-            <span className="text-2xl font-extrabold text-brand-ink">{streak}</span>
+          <div className="flex items-baseline gap-1.5 pt-1">
+            <span className="text-3xl font-extrabold text-brand-ink">{streak}</span>
             <span className="text-xs text-text-secondary">ngày liên tục</span>
           </div>
-          <p className="text-[11px] text-amber-800 font-medium">
-            Không gián đoạn nhịp nhớ
+          <p className="text-[11px] text-amber-800 font-semibold">
+            Giữ nhịp nhớ đều đặn
           </p>
-        </div>
+        </motion.div>
 
         {/* KPI 3 */}
-        <div className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1">
+        <motion.div
+          whileHover={{ y: -3 }}
+          className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1"
+        >
           <div className="flex items-center justify-between text-xs text-text-secondary font-medium">
-            <span>Tổng lượt ôn tập</span>
-            <Brain className="w-4 h-4 text-brand-primary" />
+            <span>Độ ổn định trung bình</span>
+            <Activity className="w-4 h-4 text-brand-primary" />
           </div>
-          <div className="flex items-baseline gap-2 pt-1">
-            <span className="text-2xl font-extrabold text-brand-ink">
-              {totalReviews}
+          <div className="flex items-baseline gap-1.5 pt-1">
+            <span className="text-3xl font-extrabold text-brand-ink">
+              {averageStability.toFixed(1)}
             </span>
-            <span className="text-xs text-text-secondary">lượt đánh giá</span>
+            <span className="text-xs text-text-secondary">ngày (S)</span>
           </div>
-          <p className="text-[11px] text-brand-primary font-medium">
-            Dữ liệu log bất biến
+          <p className="text-[11px] text-brand-primary font-semibold">
+            Chỉ số Stability FSRS-7
           </p>
-        </div>
+        </motion.div>
 
         {/* KPI 4 */}
-        <div className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1">
+        <motion.div
+          whileHover={{ y: -3 }}
+          className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1"
+        >
           <div className="flex items-center justify-between text-xs text-text-secondary font-medium">
             <span>Từ đã thuần thục</span>
             <CheckCircle className="w-4 h-4 text-teal-600" />
           </div>
-          <div className="flex items-baseline gap-2 pt-1">
-            <span className="text-2xl font-extrabold text-brand-ink">
+          <div className="flex items-baseline gap-1.5 pt-1">
+            <span className="text-3xl font-extrabold text-brand-ink">
               {masteredCount}
             </span>
             <span className="text-xs text-text-secondary">/ {vocabItems.length} từ</span>
           </div>
-          <p className="text-[11px] text-teal-700 font-medium">
-            Độ ổn định S &ge; 21 ngày
+          <p className="text-[11px] text-teal-700 font-semibold">
+            Độ ổn định &ge; 21 ngày
           </p>
+        </motion.div>
+      </div>
+
+      {/* Main Charts Row: Forgetting Curve & Distribution */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Chart 1: Animated Forgetting Curve (2 cols) */}
+        <div className="lg:col-span-2 bg-surface-base p-6 rounded-card border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <h3 className="text-base font-bold text-brand-ink flex items-center gap-2">
+                <Brain className="w-4 h-4 text-brand-primary" />
+                <span>Đường cong lãng quên thích ứng (FSRS Retrievability Curve)</span>
+              </h3>
+              <p className="text-xs text-text-secondary">
+                Mô phỏng xác suất truy hồi thành công theo thời gian $R(t)$ với độ ổn định trung bình hiện tại ({averageStability.toFixed(1)}d)
+              </p>
+            </div>
+            <span className="text-[11px] px-2.5 py-1 rounded-full font-mono font-bold bg-brand-primarySoft text-brand-primary">
+              R(t) = (1 + t/9S)⁻¹
+            </span>
+          </div>
+
+          <div className="h-64 w-full pt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={forgettingCurveData}>
+                <defs>
+                  <linearGradient id="retrievabilityGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#5949E8" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#5949E8" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#64748b' }} stroke="#cbd5e1" />
+                <YAxis
+                  domain={[30, 100]}
+                  unit="%"
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  stroke="#cbd5e1"
+                />
+                <Tooltip
+                  content={({ active, payload }: any) => {
+                    if (active && payload && payload.length) {
+                      return (
+                        <div className="bg-brand-ink text-white p-2.5 rounded-lg text-xs shadow-lg space-y-1">
+                          <p className="font-bold">{payload[0]?.payload?.day}</p>
+                          <p className="text-brand-mint font-semibold">
+                            Khả năng truy hồi: {payload[0]?.value}%
+                          </p>
+                          <p className="text-[10px] text-slate-300">
+                            Ngưỡng cần ôn: 90%
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="retrievability"
+                  stroke="#5949E8"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#retrievabilityGradient)"
+                  isAnimationActive={true}
+                  animationDuration={1200}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Chart 2: State Distribution Donut Chart (1 col) */}
+        <div className="bg-surface-base p-6 rounded-card border border-slate-200/80 shadow-xs space-y-4 flex flex-col justify-between">
+          <div className="space-y-0.5">
+            <h3 className="text-base font-bold text-brand-ink flex items-center gap-2">
+              <PieIcon className="w-4 h-4 text-emerald-600" />
+              <span>Phân bố trạng thái kho từ</span>
+            </h3>
+            <p className="text-xs text-text-secondary">
+              Tổng số {cards.length} thẻ theo chu kỳ FSRS
+            </p>
+          </div>
+
+          <div className="h-52 w-full flex items-center justify-center">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={stateDistributionData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={75}
+                  paddingAngle={4}
+                  dataKey="value"
+                  isAnimationActive={true}
+                  animationDuration={1000}
+                >
+                  {stateDistributionData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(val: any, name: any) => [`${val} thẻ`, name]}
+                  contentStyle={{
+                    backgroundColor: '#17213B',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '12px',
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Legend */}
+          <div className="space-y-2 border-t pt-3 text-xs">
+            {stateDistributionData.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span className="font-medium text-brand-ink">{item.name}</span>
+                </div>
+                <span className="font-mono font-bold text-text-secondary">
+                  {item.value} ({cards.length > 0 ? Math.round((item.value / cards.length) * 100) : 0}%)
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Forecast & Activity Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Activity Heatmap */}
+      {/* Row 2: 7-Day Due Forecast (Animated BarChart) & Heatmap */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Forecast BarChart */}
         <div className="bg-surface-base p-6 rounded-card border border-slate-200/80 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-brand-ink flex items-center gap-2">
+            <h3 className="text-base font-bold text-brand-ink flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-brand-primary" />
+              <span>Dự báo lịch ôn 7 ngày tới (FSRS Due Load)</span>
+            </h3>
+            <span className="text-[11px] text-text-secondary font-mono">Thẻ đến hạn</span>
+          </div>
+
+          <div className="h-56 w-full pt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={forecastData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#64748b' }} stroke="#cbd5e1" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} stroke="#cbd5e1" />
+                <Tooltip
+                  formatter={(val: any) => [`${val} thẻ cần ôn`, 'Số lượng']}
+                  contentStyle={{
+                    backgroundColor: '#17213B',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '12px',
+                  }}
+                />
+                <Bar
+                  dataKey="cards"
+                  fill="#5949E8"
+                  radius={[6, 6, 0, 0]}
+                  isAnimationActive={true}
+                  animationDuration={1000}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Heatmap Activity Matrix */}
+        <div className="bg-surface-base p-6 rounded-card border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-brand-ink flex items-center gap-2">
               <Calendar className="w-4 h-4 text-brand-primary" />
               <span>Ma trận hoạt động (6 tuần qua)</span>
             </h3>
-            <span className="text-[11px] text-text-secondary font-mono">
-              {activityHeatmap.reduce((acc, curr) => acc + curr.count, 0)} lượt
+            <span className="text-xs text-text-secondary font-mono">
+              {activityHeatmap.reduce((acc, curr) => acc + curr.count, 0)} lượt ôn
             </span>
           </div>
 
           {/* Grid of days */}
-          <div className="grid grid-cols-7 gap-1.5 pt-2">
+          <div className="grid grid-cols-7 gap-1.5 pt-3">
             {activityHeatmap.map((day, idx) => {
               const intensity =
                 day.count === 0
-                  ? 'bg-slate-100'
+                  ? 'bg-slate-100 hover:bg-slate-200'
                   : day.count <= 2
-                  ? 'bg-brand-primarySoft text-brand-primary'
+                  ? 'bg-brand-primarySoft text-brand-primary hover:bg-brand-primary/30'
                   : day.count <= 5
                   ? 'bg-brand-primary/60 text-white'
                   : 'bg-brand-primary text-white';
 
               return (
-                <div
+                <motion.div
                   key={idx}
+                  whileHover={{ scale: 1.15 }}
                   title={`${day.date}: ${day.count} lượt ôn (${day.successCount} đạt)`}
-                  className={`h-8 rounded-lg ${intensity} flex items-center justify-center text-[10px] font-mono font-medium transition-transform hover:scale-105 cursor-pointer`}
+                  className={`h-9 rounded-lg ${intensity} flex items-center justify-center text-[10px] font-mono font-bold transition-all cursor-pointer shadow-2xs`}
                 >
                   {day.count > 0 ? day.count : ''}
-                </div>
+                </motion.div>
               );
             })}
           </div>
 
-          <div className="flex items-center justify-between text-[11px] text-text-secondary pt-2 border-t">
+          <div className="flex items-center justify-between text-[11px] text-text-secondary pt-3 border-t">
             <span>Ít hơn</span>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded bg-slate-100" />
-              <div className="w-3 h-3 rounded bg-brand-primarySoft" />
-              <div className="w-3 h-3 rounded bg-brand-primary/60" />
-              <div className="w-3 h-3 rounded bg-brand-primary" />
+            <div className="flex items-center gap-1.5">
+              <div className="w-3.5 h-3.5 rounded bg-slate-100" />
+              <div className="w-3.5 h-3.5 rounded bg-brand-primarySoft" />
+              <div className="w-3.5 h-3.5 rounded bg-brand-primary/60" />
+              <div className="w-3.5 h-3.5 rounded bg-brand-primary" />
             </div>
             <span>Nhiều hơn</span>
           </div>
-        </div>
-
-        {/* 7-Day Due Forecast */}
-        <div className="bg-surface-base p-6 rounded-card border border-slate-200/80 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-brand-ink flex items-center gap-2">
-              <BarChart2 className="w-4 h-4 text-brand-primary" />
-              <span>Dự báo tải ôn tập (7 ngày tới)</span>
-            </h3>
-            <span className="text-[11px] text-text-secondary font-mono">FSRS Forecast</span>
-          </div>
-
-          <div className="space-y-2.5 pt-2">
-            {next7Days.map((d, idx) => {
-              const maxCount = Math.max(...next7Days.map((item) => item.count), 5);
-              const barWidth = `${Math.min(100, Math.max(10, (d.count / maxCount) * 100))}%`;
-
-              return (
-                <div key={idx} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-brand-ink">{d.date}</span>
-                    <span className="font-mono font-bold text-text-secondary">
-                      {d.count} thẻ
-                    </span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-brand-primary rounded-full transition-all duration-300"
-                      style={{ width: barWidth }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <p className="text-[11px] text-slate-400 italic pt-1">
-            * Dự báo dựa trên trạng thái trí nhớ hiện tại; số lượng có thể thay đổi sau mỗi lần ôn tập thực tế.
-          </p>
         </div>
       </div>
 
@@ -220,40 +415,41 @@ export function AnalyticsView() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500" />
-            <h3 className="text-sm font-semibold text-brand-ink">
-              Từ vựng cần củng cố (Lapses cao)
+            <h3 className="text-base font-bold text-brand-ink">
+              Từ vựng cần củng cố (Tần suất quên cao)
             </h3>
           </div>
           <span className="text-xs text-text-secondary">
-            Từ dễ quên trong quá trình ôn tập
+            Cần tăng cường truy hồi trong phiên học kế tiếp
           </span>
         </div>
 
         {weakWords.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
             {weakWords.map(({ vocab, lapses, reps }) => (
-              <div
+              <motion.div
                 key={vocab.id}
-                className="p-3 rounded-control border border-amber-200/60 bg-amber-50/40 space-y-1 text-xs"
+                whileHover={{ scale: 1.02 }}
+                className="p-3.5 rounded-control border border-amber-200/60 bg-amber-50/40 space-y-1.5 text-xs shadow-2xs"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-brand-ink text-sm">
+                  <span className="font-extrabold text-brand-ink text-sm">
                     {vocab.word}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">
+                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
                     {lapses} lần quên
                   </span>
                 </div>
-                <p className="text-text-secondary line-clamp-1">{vocab.meaningVi}</p>
+                <p className="text-text-secondary font-medium line-clamp-1">{vocab.meaningVi}</p>
                 <p className="text-[11px] text-slate-400 font-mono">
-                  Tổng lượt ôn: {reps}
+                  Tổng số lượt ôn: {reps}
                 </p>
-              </div>
+              </motion.div>
             ))}
           </div>
         ) : (
-          <div className="p-4 text-center text-xs text-text-secondary bg-slate-50 rounded-control">
-            Chưa có từ nào bị quên lặp lại. Tiếp tục duy trì nhịp học đều đặn!
+          <div className="p-6 text-center text-xs text-text-secondary bg-slate-50 rounded-control">
+            Chưa có từ nào bị lapse. Hãy duy trì nhịp học mỗi ngày!
           </div>
         )}
       </div>
