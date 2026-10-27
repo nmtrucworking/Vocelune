@@ -10,7 +10,7 @@ const url = new URL(base); url.pathname = `/${databaseName}`;
 const admin = new PrismaClient({ datasources: { db: { url: base } } });
 try {
   await admin.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`);
-  const env = { ...process.env, DATABASE_URL: url.toString(), NODE_ENV: 'test', APP_ORIGIN: 'http://localhost:3000', SMTP_HOST: '127.0.0.1', SMTP_PORT: '1025', OXFORD_APP_ID: '', OXFORD_APP_KEY: '', REDIS_URL: '', EMAIL_ENCRYPTION_KEY: 'a'.repeat(64) };
+  const env = { ...process.env, DATABASE_URL: url.toString(), NODE_ENV: 'test', APP_ORIGIN: 'http://localhost:3000', SMTP_HOST: '127.0.0.1', SMTP_PORT: '1025', OXFORD_APP_ID: '', OXFORD_APP_KEY: '', MERRIAM_WEBSTER_API_KEY: '', DICTIONARY_LICENSE_MODE: 'LIVE_ONLY', OXFORD_PERSISTENCE_APPROVED: 'false', OXFORD_PERSIST_FIELDS: '', MERRIAM_WEBSTER_PERSISTENCE_APPROVED: 'false', MERRIAM_WEBSTER_PERSIST_FIELDS: '', REDIS_URL: '', EMAIL_ENCRYPTION_KEY: 'a'.repeat(64) };
   for (const args of [['run', 'db:migrate', '--workspace=@vocelune/backend'], ['run', 'test:api', '--workspace=@vocelune/backend']]) {
     const result = spawnSync('npm', args, { cwd: new URL('..', import.meta.url), stdio: 'inherit', env });
     if (result.status !== 0) { process.exitCode = result.status || 1; break; }

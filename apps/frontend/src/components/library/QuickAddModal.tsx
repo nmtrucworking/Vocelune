@@ -1,236 +1,90 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, Search, Sparkles, Volume2, Check, AlertCircle, BookOpen, Info } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Search, Sparkles, Volume2, Check, Info } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
-import { PartOfSpeech, CEFRLevel, Dialect } from '@/types';
-import { post } from '@/lib/api';
+import { PartOfSpeech, CEFRLevel, Dialect, VocabItem } from '@/types';
+import { api, post } from '@/lib/api';
+import { DictionaryLookup, DictionaryProvider, useDictionaryProviders } from '@/lib/dictionary';
+import { COMMON_WORD_KNOWLEDGE } from '@/lib/local-vocabulary-hints';
+import { DictionarySourceSelect } from '../dictionary/DictionarySourceSelect';
+import { DictionaryAttribution } from '../dictionary/DictionaryAttribution';
 import { speakWord } from '@/lib/speech';
 
-interface QuickAddModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-interface DictionarySense {
-  id: string;
-  pos: PartOfSpeech;
-  definitionEn: string;
-  meaningVi: string;
-  exampleEn: string;
-  exampleVi: string;
-  cefr: CEFRLevel;
-}
-
-// Built-in CEFR & translation knowledge base for common vocabulary
-const COMMON_WORD_KNOWLEDGE: Record<string, { vi: string; cefr: CEFRLevel; pos?: PartOfSpeech; defEn?: string; egEn?: string }> = {
-  abandon: { vi: 'Từ bỏ, bỏ rơi, dừng giữa chừng', cefr: 'B2', pos: 'verb', defEn: 'To leave a place, thing, or person forever.', egEn: 'They had to abandon the sinking ship.' },
-  resilient: { vi: 'Kiên cường, có khả năng phục hồi nhanh chóng', cefr: 'C1', pos: 'adjective', defEn: 'Able to quickly become strong or healthy again after difficulty.', egEn: 'Local businesses have proven remarkably resilient.' },
-  comprehensive: { vi: 'Toàn diện, bao quát mọi mặt', cefr: 'B2', pos: 'adjective', defEn: 'Complete and including everything that is necessary.', egEn: 'The team conducted a comprehensive review of the project.' },
-  mitigate: { vi: 'Làm giảm nhẹ, giảm thiểu rủi ro', cefr: 'C1', pos: 'verb', defEn: 'To make something less harmful or severe.', egEn: 'We must act swiftly to mitigate climate change risks.' },
-  feasible: { vi: 'Khả thi, có thể thực hiện được', cefr: 'B2', pos: 'adjective', defEn: 'Able to be made, done, or achieved successfully.', egEn: 'The solar transition is economically feasible.' },
-  lucrative: { vi: 'Sinh lợi cao, mang lại nhiều tiền của', cefr: 'C1', pos: 'adjective', defEn: 'Producing a lot of money; profitable.', egEn: 'The partnership opened up a lucrative new market.' },
-  perseverance: { vi: 'Sự kiên trì, bền chí, quyết tâm', cefr: 'B2', pos: 'noun', defEn: 'Continued effort to achieve something despite difficulties.', egEn: 'Language mastery requires daily perseverance.' },
-  ubiquitous: { vi: 'Có mặt ở khắp mọi nơi, phổ biến rộng rãi', cefr: 'C1', pos: 'adjective', defEn: 'Seeming to be everywhere at the same time.', egEn: 'Smartphones have become ubiquitous in modern society.' },
-  paradigm: { vi: 'Mô hình, chuẩn mực, hệ hình tư duy', cefr: 'C1', pos: 'noun', defEn: 'A model or typical pattern of ideas and beliefs.', egEn: 'AI represents a paradigm shift in education.' },
-  articulate: { vi: 'Ăn nói lưu loát, hoạt ngôn, mạch lạc', cefr: 'B2', pos: 'adjective', defEn: 'Able to express thoughts clearly and effectively.', egEn: 'She is an articulate and persuasive presenter.' },
-  leverage: { vi: 'Tận dụng, phát huy tối đa đòn bẩy', cefr: 'C1', pos: 'verb', defEn: 'To use something to achieve greater advantage.', egEn: 'The team leveraged their early community to expand.' },
-  pragmatic: { vi: 'Thực tế, thực dụng theo nghĩa tích cực', cefr: 'B2', pos: 'adjective', defEn: 'Solving problems in a sensible and practical way.', egEn: 'We need a pragmatic approach to the budget.' },
-  ephemeral: { vi: 'Phù du, chóng tàn, ngắn ngủi', cefr: 'C1', pos: 'adjective', defEn: 'Lasting for only a short time; transitory.', egEn: 'Fame in modern media is often ephemeral.' },
-  serendipity: { vi: 'Sự tình cờ may mắn, cái duyên tốt lành', cefr: 'C1', pos: 'noun', defEn: 'Pleasant coincidence; finding good things without seeking.', egEn: 'Finding this quiet cafe was pure serendipity.' },
-  diligent: { vi: 'Cần cù, siêng năng, chu đáo tỉ mỉ', cefr: 'B2', pos: 'adjective', defEn: 'Done in a careful and detailed way; hardworking.', egEn: 'He is a diligent student who reviews every day.' },
-};
-
+interface QuickAddModalProps { isOpen: boolean; onClose: () => void }
 export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
-  const { decks, addVocabItem, settings } = useVocelune();
-
+  const { decks, addVocabItem, settings, refresh } = useVocelune();
+  const { providers, error: providerError } = useDictionaryProviders(isOpen);
   const [word, setWord] = useState('');
   const [pos, setPos] = useState<PartOfSpeech>('noun');
   const [dialect, setDialect] = useState<Dialect>(settings.englishDialect);
-  const [phonetic, setPhonetic] = useState('');
-  const [meaningVi, setMeaningVi] = useState('');
-  const [definitionEn, setDefinitionEn] = useState('');
-  const [exampleEn, setExampleEn] = useState('');
-  const [exampleVi, setExampleVi] = useState('');
+  const [source, setSource] = useState<DictionaryProvider>(settings.dictionaryProvider || 'free_dictionary');
+  const [allowFallback, setAllowFallback] = useState(settings.dictionaryFallbackEnabled || false);
+  const [phonetic, setPhonetic] = useState(''), [meaningVi, setMeaningVi] = useState('');
+  const [definitionEn, setDefinitionEn] = useState(''), [exampleEn, setExampleEn] = useState(''), [exampleVi, setExampleVi] = useState('');
   const [cefr, setCefr] = useState<CEFRLevel>('unknown');
-  const [deckId, setDeckId] = useState(decks[0]?.id || 'deck_oxford');
-  const [tags, setTags] = useState('essential');
-  const [notes, setNotes] = useState('');
-
-  const [isSearching, setIsSearching] = useState(false);
-  const [candidates, setCandidates] = useState<DictionarySense[]>([]);
+  const [deckId, setDeckId] = useState(decks[0]?.id || '');
+  const [tags, setTags] = useState('essential'), [notes, setNotes] = useState('');
+  const [isSearching, setIsSearching] = useState(false), [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<DictionaryLookup | null>(null);
   const [selectedSenseId, setSelectedSenseId] = useState<string | null>(null);
-
+  const [includeProviderContent, setIncludeProviderContent] = useState(false);
   const [lookupMessage, setLookupMessage] = useState('');
   const [lookupNoticeType, setLookupNoticeType] = useState<'info' | 'warning'>('info');
-  const [saving, setSaving] = useState(false);
-
+  const request = useRef<{ sequence: number; controller?: AbortController }>({ sequence: 0 });
+  useEffect(() => {
+    if (isOpen) { setSource(settings.dictionaryProvider || 'free_dictionary'); setAllowFallback(settings.dictionaryFallbackEnabled || false); setDialect(settings.englishDialect); setResult(null); setSelectedSenseId(null); setIncludeProviderContent(false); setLookupMessage(''); setIsSearching(false); }
+    return () => { request.current.controller?.abort(); request.current.sequence++; };
+  }, [isOpen, settings.dictionaryProvider, settings.dictionaryFallbackEnabled, settings.englishDialect]);
+  const candidates = (result?.candidates || []).flatMap(candidate => candidate.senses.map(sense => ({
+    ...sense, id: `${candidate.providerEntryRef}:${sense.providerSenseRef}`, entryRef: candidate.providerEntryRef, pos: candidate.partOfSpeech,
+  })));
+  const selected = candidates.find(sense => sense.id === selectedSenseId);
+  const selectedPronunciation = selected?.pronunciations.find(p => p.dialect === dialect && p.ipa) ?? selected?.pronunciations.find(p => p.dialect === 'unknown' && p.ipa);
+  const providerValues = { definitionEn: selected?.definition.value || '', exampleEn: selected?.examples.items[0] || '', phonetic: selectedPronunciation?.ipa || '' };
+  const fromProvider = (field: keyof typeof providerValues) => !!(includeProviderContent && selected?.persistFields.includes(field) && providerValues[field]);
+  const known = COMMON_WORD_KNOWLEDGE[word.trim().toLowerCase()];
+  const sourceStatus = providers.find(provider => provider.id === source);
+  const invalidateLookup = () => {
+    request.current.controller?.abort(); request.current.sequence++;
+    setResult(null); setSelectedSenseId(null); setIncludeProviderContent(false); setLookupMessage(''); setIsSearching(false);
+  };
   const handleLookup = async () => {
-    if (!word.trim()) return;
-    setIsSearching(true);
-    setLookupMessage('');
-    setCandidates([]);
-
-    const cleanWord = word.trim().toLowerCase();
-    const known = COMMON_WORD_KNOWLEDGE[cleanWord];
-    let foundCandidates: DictionarySense[] = [];
-
-    // 1. Try Backend Oxford lookup
+    if (!word.trim() || saving) return;
+    request.current.controller?.abort();
+    const controller = new AbortController(), sequence = ++request.current.sequence;
+    request.current.controller = controller;
+    setIsSearching(true); setResult(null); setSelectedSenseId(null); setIncludeProviderContent(false); setLookupMessage('');
     try {
-      const response = await post<{
-        candidates: {
-          partOfSpeech: PartOfSpeech;
-          senses: {
-            providerSenseRef?: string;
-            definition: { value: string | null };
-            examples: { items: string[] };
-          }[];
-        }[];
-        warnings: string[];
-      }>('/dictionary/lookup', { word: cleanWord, partOfSpeech: pos, dialect });
-
-      if (response.candidates && response.candidates.length > 0) {
-        foundCandidates = response.candidates.flatMap((c) =>
-          c.senses.map((sense, i) => ({
-            id: sense.providerSenseRef || String(i),
-            pos: c.partOfSpeech,
-            definitionEn: sense.definition.value || '',
-            meaningVi: known?.vi || '',
-            exampleEn: sense.examples.items[0] || '',
-            exampleVi: '',
-            cefr: known?.cefr || ('unknown' as CEFRLevel),
-          }))
-        );
-      }
-    } catch {
-      // Backend lookup unconfigured or unavailable, fall through to Open Dictionary
-    }
-
-    // 2. Open Dictionary API fallback (Free & Real-time)
-    if (foundCandidates.length === 0) {
-      try {
-        const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(cleanWord)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            const entry = data[0];
-            if (entry.phonetic && !phonetic) {
-              setPhonetic(entry.phonetic);
-            }
-
-            const parsedSenses: DictionarySense[] = [];
-            entry.meanings?.forEach((m: any, mIdx: number) => {
-              const mPos = (m.partOfSpeech || 'noun') as PartOfSpeech;
-              m.definitions?.slice(0, 3).forEach((d: any, dIdx: number) => {
-                parsedSenses.push({
-                  id: `open_${mIdx}_${dIdx}`,
-                  pos: mPos,
-                  definitionEn: d.definition || '',
-                  meaningVi: known?.vi || '',
-                  exampleEn: d.example || '',
-                  exampleVi: '',
-                  cefr: known?.cefr || 'unknown',
-                });
-              });
-            });
-
-            if (parsedSenses.length > 0) {
-              foundCandidates = parsedSenses;
-              setLookupNoticeType('info');
-              setLookupMessage('Đang lấy dữ liệu từ Từ điển Mở (Open Dictionary). Chọn nghĩa phù hợp và bổ sung nghĩa tiếng Việt của bạn.');
-            }
-          }
-        }
-      } catch {
-        // network / offline
-      }
-    }
-
-    // 3. Fallback to local knowledge or manual notice
-    if (foundCandidates.length === 0) {
-      if (known) {
-        foundCandidates = [
-          {
-            id: 'known_1',
-            pos: known.pos || pos,
-            definitionEn: known.defEn || `Meaning of "${cleanWord}" in English.`,
-            meaningVi: known.vi,
-            exampleEn: known.egEn || '',
-            exampleVi: '',
-            cefr: known.cefr,
-          },
-        ];
-        setLookupNoticeType('info');
-        setLookupMessage('Đã tìm thấy dữ liệu chuẩn Oxford trong kho tri thức tích hợp.');
-      } else {
-        setLookupNoticeType('warning');
-        setLookupMessage('Chưa cấu hình Oxford API Key. Bạn có thể tự nhập định nghĩa tiếng Anh và nghĩa tiếng Việt bên dưới.');
-      }
-    }
-
-    setCandidates(foundCandidates);
-
-    // Auto-fill primary candidate details into form fields
-    if (foundCandidates.length > 0) {
-      const first = foundCandidates[0];
-      setSelectedSenseId(first.id);
-      if (first.pos) setPos(first.pos);
-      if (first.definitionEn) setDefinitionEn(first.definitionEn);
-      if (first.exampleEn) setExampleEn(first.exampleEn);
-      if (first.meaningVi) setMeaningVi(first.meaningVi);
-      if (first.cefr && first.cefr !== 'unknown') setCefr(first.cefr);
-      if (!phonetic) setPhonetic(`/${cleanWord}/`);
-    }
-
-    setIsSearching(false);
+      const response = await api<DictionaryLookup>('/dictionary/lookup', { method: 'POST', body: JSON.stringify({ word: word.trim(), partOfSpeech: pos, dialect, provider: source, allowFallback: source !== 'free_dictionary' && allowFallback }), signal: controller.signal });
+      if (sequence !== request.current.sequence || controller.signal.aborted) return;
+      setResult(response); setLookupNoticeType(response.candidates.length ? 'info' : 'warning');
+      setLookupMessage(response.warnings.join(' '));
+      // Require an explicit sense selection; spelling/POS can have several meanings.
+    } catch (error) {
+      if (sequence !== request.current.sequence || controller.signal.aborted) return;
+      setLookupNoticeType('warning'); setLookupMessage(error instanceof Error ? error.message : 'Không thể tra từ.');
+    } finally { if (sequence === request.current.sequence) setIsSearching(false); }
   };
-
-  const handleSelectSense = (sense: DictionarySense) => {
-    setSelectedSenseId(sense.id);
-    if (sense.pos) setPos(sense.pos);
-    if (sense.definitionEn) setDefinitionEn(sense.definitionEn);
-    if (sense.exampleEn) setExampleEn(sense.exampleEn);
-    if (sense.meaningVi && !meaningVi) setMeaningVi(sense.meaningVi);
-    if (sense.cefr && sense.cefr !== 'unknown') setCefr(sense.cefr);
-  };
-
-  const handleSpeak = () => {
-    if (word) speakWord(word, dialect);
-  };
-
+  const handleSelectSense = (sense: typeof candidates[number]) => { setSelectedSenseId(sense.id); setIncludeProviderContent(sense.persistFields.length > 0); };
+  const handleSpeak = () => { if (word) speakWord(word, dialect); };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!word.trim() || !meaningVi.trim()) return;
-
-    if (saving) return;
+    if (!word.trim() || !meaningVi.trim() || saving || isSearching) return;
     setSaving(true);
     try {
-      await addVocabItem({
-        word: word.trim(),
-        phonetic: phonetic.trim() || `/${word.trim()}/`,
-        dialect,
-        partOfSpeech: pos,
-        definitionEn: definitionEn.trim(),
-        meaningVi: meaningVi.trim(),
-        exampleEn: exampleEn.trim(),
-        exampleVi: exampleVi.trim(),
-        cefr,
-        cefrSource: cefr !== 'unknown' ? 'verified_3000' : 'manual',
-        deckId: deckId || decks[0]?.id || 'deck_oxford',
-        tags: tags
-          .split(',')
-          .map((t) => t.trim().toLowerCase())
-          .filter(Boolean),
-        notes: notes.trim(),
-      });
-      onClose();
-    } catch {
-      // Keep form intact
-    } finally {
-      setSaving(false);
-    }
+      const ownedFields = { phonetic: phonetic.trim(), definitionEn: definitionEn.trim(), exampleEn: exampleEn.trim(), exampleVi: exampleVi.trim() };
+      const common = { meaningVi: meaningVi.trim(), deckId: deckId || decks[0]?.id, tags: tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean), notes: notes.trim(), cefr, cefrSource: cefr === 'unknown' ? 'unknown' as const : 'manual' as const };
+      if (includeProviderContent && selected && result) {
+        await post<VocabItem>('/dictionary/vocabulary', { ...result.query, provider: result.provider, providerEntryRef: selected.entryRef, providerSenseRef: selected.providerSenseRef, ...common, manualFields: ownedFields });
+        await refresh().catch(() => {});
+      } else {
+        await addVocabItem({ word: word.trim(), partOfSpeech: pos, dialect, ...ownedFields, ...common, deckId: common.deckId || '' });
+      }
+      invalidateLookup(); setWord(''); setMeaningVi(''); setDefinitionEn(''); setExampleEn(''); setExampleVi(''); setPhonetic(''); setCefr('unknown'); setNotes(''); onClose();
+    } catch (error) { setLookupNoticeType('warning'); setLookupMessage(error instanceof Error ? error.message : 'Không thể lưu từ.'); }
+    finally { setSaving(false); }
   };
-
   if (!isOpen) return null;
 
   return (
@@ -259,9 +113,13 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-5">
+          <DictionarySourceSelect id="quick-add-dictionary" value={source} providers={providers} disabled={saving} onChange={value => { invalidateLookup(); setSource(value); }} />
+          {sourceStatus && <p className="text-xs text-text-secondary">{sourceStatus.description}{!sourceStatus.configured && ' Nguồn chưa được bật trên hệ thống.'}</p>}
+          {source !== 'free_dictionary' && <label className="flex items-start gap-2 text-xs text-text-secondary"><input type="checkbox" checked={allowFallback} disabled={saving} onChange={e => { invalidateLookup(); setAllowFallback(e.target.checked); }} />Thử Free Dictionary API khi nguồn đã chọn lỗi hoặc không tìm thấy từ</label>}
+          {providerError && <p role="status" className="text-xs text-amber-800">{providerError}</p>}
           {/* Lookup Input Row */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-brand-ink uppercase tracking-wide">
+            <label htmlFor="quick-add-word" className="text-xs font-semibold text-brand-ink uppercase tracking-wide">
               Từ vựng tiếng Anh <span className="text-rose-500">*</span>
             </label>
             <div className="flex gap-2">
@@ -269,9 +127,10 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
                 <input
                   type="text"
                   required
+                  id="quick-add-word"
                   placeholder="Ví dụ: resilient, comprehensive, feasible, articulate..."
                   value={word}
-                  onChange={(e) => setWord(e.target.value)}
+                  onChange={(e) => { invalidateLookup(); setWord(e.target.value); }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !meaningVi) {
                       e.preventDefault();
@@ -295,7 +154,7 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
               <button
                 type="button"
                 onClick={handleLookup}
-                disabled={!word.trim() || isSearching}
+                disabled={!word.trim() || isSearching || saving}
                 className="px-4 py-2.5 bg-brand-primarySoft text-brand-primary font-semibold text-xs rounded-control hover:bg-brand-primary hover:text-white transition-all flex items-center gap-1.5 disabled:opacity-50"
               >
                 <Search className="w-3.5 h-3.5" />
@@ -304,23 +163,26 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
             </div>
           </div>
 
+          {result && <div className="space-y-2 text-xs"><p className="font-semibold">Nguồn kết quả: {providers.find(p => p.id === result.provider)?.name || result.attribution.name}{result.fallbackUsed ? ' · Đã dùng nguồn dự phòng' : ''}</p><DictionaryAttribution provider={result.provider} sources={[result.attribution]} />
+            {result.suggestions.length > 0 && <div className="flex gap-2 flex-wrap"><span>Có phải bạn muốn tìm:</span>{result.suggestions.map(suggestion => <button type="button" key={suggestion} className="underline text-brand-primary" onClick={() => { invalidateLookup(); setWord(suggestion); }}>{suggestion}</button>)}</div>}
+          </div>}
           {/* Sense Selection (When candidates are available) */}
           {candidates.length > 0 && (
             <div className="space-y-2 p-3.5 bg-slate-50 border border-slate-200/80 rounded-control">
               <div className="flex items-center justify-between text-xs font-semibold text-brand-ink">
                 <span>Nghĩa tra cứu gợi ý ({candidates.length} senses)</span>
                 <span className="text-[11px] text-text-secondary font-normal">
-                  Nhấp vào một nghĩa để tự động điền form
+                  Chọn đúng nghĩa trước khi lưu
                 </span>
               </div>
               <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
                 {candidates.map((sense) => {
                   const isSelected = selectedSenseId === sense.id;
                   return (
-                    <div
+                    <button type="button"
                       key={sense.id}
                       onClick={() => handleSelectSense(sense)}
-                      className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                      className={`w-full text-left p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
                         isSelected
                           ? 'border-brand-primary bg-white ring-2 ring-brand-primary/20 shadow-xs'
                           : 'border-slate-200 bg-white/70 hover:bg-white hover:border-slate-300'
@@ -330,25 +192,26 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
                         <span className="font-bold text-brand-primary italic">
                           ({sense.pos})
                         </span>
-                        {sense.cefr !== 'unknown' && (
-                          <span className="px-1.5 py-0.5 rounded bg-brand-primarySoft text-brand-primary text-[10px] font-bold">
-                            {sense.cefr}
-                          </span>
-                        )}
+
                       </div>
-                      {sense.meaningVi && (
-                        <p className="text-brand-ink font-bold">{sense.meaningVi}</p>
-                      )}
+
                       <p className="text-text-secondary text-[11px] mt-0.5 line-clamp-2">
-                        {sense.definitionEn}
+                        {sense.definition.value}
                       </p>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
             </div>
           )}
 
+          {selected && <div className="space-y-2 border rounded-control p-3 text-xs">
+            <DictionaryAttribution provider={result?.provider} sources={selected.attribution} />
+            {selected.examples.items[0] && <p className="italic text-text-secondary">{selected.examples.items[0]}</p>}
+            {selected.pronunciations.map((pronunciation, i) => <div className="flex items-center gap-2" key={i}><span>{pronunciation.ipa || 'Chưa có IPA'} · {pronunciation.dialect === 'en-us' ? 'Giọng Mỹ' : pronunciation.dialect === 'en-gb' ? 'Giọng Anh' : 'Chưa xác nhận giọng'}</span>{pronunciation.audio.playbackUrl && <button type="button" className="text-brand-primary underline" onClick={() => { const audio = new Audio(pronunciation.audio.playbackUrl); void audio.play().catch(() => { setLookupNoticeType('warning'); setLookupMessage('Không phát được audio của nguồn. Bạn có thể dùng nút phát âm bên cạnh từ.'); }); }}>Nghe từ nguồn</button>}</div>)}
+            {selected.persistFields.length > 0 ? <label className="flex items-start gap-2"><input type="checkbox" checked={includeProviderContent} onChange={e => setIncludeProviderContent(e.target.checked)} />Lưu kèm các trường được phép từ nguồn đã chọn; giữ thông tin nguồn và giấy phép.</label> : <p className="text-amber-800">Nghĩa này chỉ để tham khảo. Hãy tự biên soạn các trường bên dưới khi lưu từ.</p>}
+          </div>}
+          {known && <div className="rounded-control bg-slate-50 border p-3 text-xs space-y-2"><p>Gợi ý cục bộ, chưa xác minh theo nguồn từ điển: {known.vi}</p><div className="flex gap-3"><button type="button" className="underline text-brand-primary" onClick={() => setMeaningVi(known.vi)}>Dùng gợi ý tiếng Việt</button><button type="button" className="underline text-brand-primary" onClick={() => setCefr(known.cefr)}>Dùng CEFR gợi ý ({known.cefr}, nhập tay)</button></div></div>}
           {/* Status Message Pill */}
           {lookupMessage && (
             <div
@@ -363,13 +226,14 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
             </div>
           )}
 
+          <label className="block text-xs font-semibold">Giọng muốn tra<select aria-label="Giọng muốn tra" value={dialect} disabled={saving} onChange={e => { invalidateLookup(); setDialect(e.target.value as Dialect); }} className="mt-1 block w-full border rounded-control p-2"><option value="en-us">Anh – Mỹ</option><option value="en-gb">Anh – Anh</option></select></label>
           {/* Core Details Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-text-secondary">Từ loại (POS)</label>
-              <select
+              <label htmlFor="quick-add-pos" className="text-xs font-medium text-text-secondary">Từ loại (POS)</label>
+              <select id="quick-add-pos"
                 value={pos}
-                onChange={(e) => setPos(e.target.value as PartOfSpeech)}
+                onChange={(e) => { invalidateLookup(); setPos(e.target.value as PartOfSpeech); }}
                 className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary font-medium"
               >
                 <option value="noun">Danh từ (noun)</option>
@@ -386,7 +250,8 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
               <input
                 type="text"
                 placeholder="/.../"
-                value={phonetic}
+                value={fromProvider('phonetic') ? providerValues.phonetic : phonetic}
+                readOnly={fromProvider('phonetic')}
                 onChange={(e) => setPhonetic(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control font-mono focus:outline-none focus:border-brand-primary"
               />
@@ -412,12 +277,13 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
 
           {/* Meaning & Definition */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-brand-ink uppercase tracking-wide">
+            <label htmlFor="quick-add-meaning" className="text-xs font-semibold text-brand-ink uppercase tracking-wide">
               Nghĩa tiếng Việt <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
               required
+              id="quick-add-meaning"
               placeholder="VD: Kiên cường, phục hồi nhanh sau khó khăn"
               value={meaningVi}
               onChange={(e) => setMeaningVi(e.target.value)}
@@ -432,7 +298,8 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
             <textarea
               rows={2}
               placeholder="VD: Able to quickly become strong, healthy, or successful again..."
-              value={definitionEn}
+              value={fromProvider('definitionEn') ? providerValues.definitionEn : definitionEn}
+              readOnly={fromProvider('definitionEn')}
               onChange={(e) => setDefinitionEn(e.target.value)}
               className="w-full px-3.5 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
             />
@@ -445,7 +312,8 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
               <input
                 type="text"
                 placeholder="VD: Local businesses have proven remarkably resilient."
-                value={exampleEn}
+                value={fromProvider('exampleEn') ? providerValues.exampleEn : exampleEn}
+                readOnly={fromProvider('exampleEn')}
                 onChange={(e) => setExampleEn(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
               />
@@ -502,7 +370,7 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
             </button>
             <button
               type="submit"
-              disabled={!word.trim() || !meaningVi.trim() || saving}
+              disabled={!word.trim() || !meaningVi.trim() || saving || isSearching}
               className="px-5 py-2 text-xs font-semibold text-white bg-brand-primary hover:bg-brand-primaryHover rounded-control shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
             >
               <Check className="w-4 h-4" />

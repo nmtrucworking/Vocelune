@@ -15,6 +15,7 @@ import { TestsService } from './tests/tests.service';
 import { TransferController } from './transfer/transfer.controller';
 import { TransferService } from './transfer/transfer.service';
 import { IntegrationsController } from './integrations/integrations.controller';
+import { DictionaryTransport } from './integrations/dictionary/transport';
 import { DictionaryService } from './integrations/dictionary.service';
 import { MediaService } from './integrations/media.service';
 import { AnalyticsController } from './analytics/analytics.controller';
@@ -30,7 +31,7 @@ export class StudyModule {}
 export class TestsModule {}
 @Module({ imports: [VocabularyModule, TestsModule], controllers: [TransferController], providers: [TransferService], exports: [TransferService] })
 export class TransferModule {}
-@Module({ imports: [VocabularyModule], controllers: [IntegrationsController], providers: [DictionaryService, MediaService], exports: [MediaService] })
+@Module({ imports: [VocabularyModule], controllers: [IntegrationsController], providers: [DictionaryService, DictionaryTransport, MediaService], exports: [MediaService] })
 export class IntegrationsModule {}
 @Module({ imports: [StudyModule, TestsModule], controllers: [AnalyticsController], providers: [AnalyticsService] })
 export class AnalyticsModule {}

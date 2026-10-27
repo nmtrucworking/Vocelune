@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { credentials, settingsSchema } from '../identity/identity.service';
 import { vocabSchema, deckSchema } from '../vocabulary/vocabulary.service';
 import { reviewSchema } from '../study/study.service';
+import { lookupSchema } from '../integrations/dictionary/contracts';
+import { saveDictionarySchema } from '../integrations/dictionary.service';
 import { blueprintSchema } from '../tests/tests.service';
 export function enrichOpenApi(document: OpenAPIObject) {
   const bodies: Record<string, z.ZodType> = {
@@ -21,6 +23,8 @@ export function enrichOpenApi(document: OpenAPIObject) {
     'post /study/sessions/{id}/reveal': z.object({ cardId: z.string().uuid() }),
     'put /test-attempts/{id}/answers/{questionId}': z.object({ answer: z.string().max(5000), clientSequence: z.number().int().min(1).optional() }),
     'post /test-attempts/{id}/submit': z.object({ answers: z.record(z.string().uuid(), z.string()).optional() }),
+    'post /dictionary/lookup': lookupSchema,
+    'post /dictionary/vocabulary': saveDictionarySchema,
     'post /exports': z.object({ format: z.enum(['csv', 'xlsx', 'json']) }),
   };
   for (const [path, item] of Object.entries(document.paths)) {

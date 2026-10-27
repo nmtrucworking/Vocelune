@@ -5,6 +5,7 @@ import { X, Volume2, Trash2, Check, Sparkles } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, PartOfSpeech, CEFRLevel } from '@/types';
 import { speakWord } from '@/lib/speech';
+import { DictionaryAttribution } from '../dictionary/DictionaryAttribution';
 import { AudioButton } from '../common/AudioButton';
 
 interface WordDetailModalProps {
@@ -194,6 +195,7 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
           </form>
         ) : (
           <div className="p-6 space-y-5 overflow-y-auto">
+            {vocab.provenance?.attribution?.length ? <DictionaryAttribution provider={vocab.provenance.provider} sources={vocab.provenance.attribution} /> : null}
             {/* Word & Pronunciation */}
             <div className="flex items-start justify-between">
               <div>

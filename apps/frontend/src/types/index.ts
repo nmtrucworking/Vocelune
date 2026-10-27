@@ -1,3 +1,5 @@
+import type { DictionaryAttribution, DictionaryProvider } from '@/lib/dictionary';
+
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | 'unknown';
 
 export type PartOfSpeech =
@@ -40,6 +42,8 @@ export interface VocabItem {
   exampleEn: string;
   exampleVi: string;
   cefr: CEFRLevel;
+  sourceKind?: 'user' | 'licensed';
+  provenance?: { provider?: DictionaryProvider; attribution?: DictionaryAttribution[]; persistedFields?: string[]; exportableFields?: string[]; licenseMode?: string } | null;
   cefrSource?: 'verified_3000' | 'verified_5000' | 'manual' | 'unknown';
   deckId: string;
   tags: string[];
@@ -124,6 +128,8 @@ export interface UserSettings {
   displayName: string;
   timezone: string;
   englishDialect: Dialect;
+  dictionaryProvider: DictionaryProvider;
+  dictionaryFallbackEnabled: boolean;
   desiredRetention: number; // 0.85 - 0.95
   newCardsPerDay: number;
   dayStartHour: number;

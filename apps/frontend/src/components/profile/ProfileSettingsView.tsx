@@ -13,11 +13,16 @@ import {
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { Dialect } from '@/types';
+import { DictionaryProvider, useDictionaryProviders } from '@/lib/dictionary';
+import { DictionarySourceSelect } from '../dictionary/DictionarySourceSelect';
 import { speakWord } from '@/lib/speech';
 
 export function ProfileSettingsView() {
   const { settings, updateSettings, logout } = useVocelune();
 
+  const { providers, error: dictionaryError } = useDictionaryProviders();
+  const [dictionaryProvider, setDictionaryProvider] = useState<DictionaryProvider>(settings.dictionaryProvider || 'free_dictionary');
+  const [dictionaryFallbackEnabled, setDictionaryFallbackEnabled] = useState(settings.dictionaryFallbackEnabled || false);
   const [displayName, setDisplayName] = useState(settings.displayName);
   const [dialect, setDialect] = useState<Dialect>(settings.englishDialect);
   const [retention, setRetention] = useState<number>(settings.desiredRetention);
@@ -34,7 +39,7 @@ export function ProfileSettingsView() {
       englishDialect: dialect,
       desiredRetention: Number(retention),
       newCardsPerDay: Number(newCardsLimit),
-      autoPronounce, timezone, dayStartHour,
+      autoPronounce, timezone, dayStartHour, dictionaryProvider, dictionaryFallbackEnabled,
     });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2500); } catch { setIsSaved(false); }
@@ -80,6 +85,14 @@ export function ProfileSettingsView() {
           </div>
         </div>
 
+        <section className="bg-surface-base border rounded-card shadow-card p-6 space-y-4">
+          <h3 className="text-sm font-semibold">Từ điển mặc định</h3>
+          <DictionarySourceSelect id="profile-dictionary" value={dictionaryProvider} providers={providers} onChange={setDictionaryProvider} />
+          <p className="text-xs text-text-secondary">Nguồn này được dùng mặc định khi thêm từ. Bạn có thể đổi riêng cho mỗi lần tra cứu.</p>
+          <label className="flex gap-2 items-start text-xs"><input type="checkbox" checked={dictionaryFallbackEnabled} onChange={e => setDictionaryFallbackEnabled(e.target.checked)} />Cho phép thử Free Dictionary API nếu nguồn có API key lỗi hoặc không tìm thấy từ.</label>
+          {dictionaryError && <p className="text-xs text-amber-800">{dictionaryError}</p>}
+          <ul className="text-xs space-y-1 text-text-secondary">{providers.map(provider => <li key={provider.id}>{provider.name}: {provider.configured ? 'Sẵn sàng' : 'Chưa cấu hình'}{provider.configured && !provider.persistenceSupported ? ' · Chỉ xem tham khảo' : ''}</li>)}</ul>
+        </section>
         {/* FSRS Settings Card */}
         <div className="bg-surface-base border border-slate-200/90 rounded-card shadow-card p-6 space-y-5">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">

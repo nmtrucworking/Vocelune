@@ -31,6 +31,8 @@ export const INITIAL_SETTINGS: UserSettings = {
   displayName: 'Minh Trúc',
   timezone: 'Asia/Ho_Chi_Minh',
   englishDialect: 'en-us',
+  dictionaryProvider: 'free_dictionary',
+  dictionaryFallbackEnabled: false,
   desiredRetention: 0.9,
   newCardsPerDay: 20,
   dayStartHour: 4,

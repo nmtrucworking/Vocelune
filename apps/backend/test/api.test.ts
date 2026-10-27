@@ -171,7 +171,7 @@ test('CSV quoted newlines, XLSX template, ZIP limits and upload ownership', asyn
 });
 
 test('dictionary is explicit about missing credentials and never fabricates CEFR; missing R2 fails clearly', async () => {
-  const dictionary = (await post('/dictionary/lookup', alice, { word: 'unknownword', partOfSpeech: 'noun' }).expect(201)).body;
+  const dictionary = (await post('/dictionary/lookup', alice, { word: 'unknownword', partOfSpeech: 'noun', provider: 'oxford', allowFallback: false }).expect(201)).body;
   assert.deepEqual(dictionary.candidates, []); assert.ok(dictionary.warnings.length);
   await post('/media/upload-intents', alice, { purpose: 'flashcard', mime: 'image/svg+xml', sizeBytes: 50 }).expect(422);
   await post('/media/upload-intents', alice, { purpose: 'flashcard', mime: 'image/png', sizeBytes: 50 }).expect(503);

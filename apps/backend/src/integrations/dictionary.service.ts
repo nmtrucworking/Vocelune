@@ -1,59 +1,106 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpException, Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { Database, json } from '../common/db';
 import { config } from '../common/config';
 import { fail } from '../common/http';
-import { VocabularyService, vocabSchema, pos } from '../vocabulary/vocabulary.service';
+import { vocabDto } from '../common/serializers';
+import { VocabularyService, vocabSchema } from '../vocabulary/vocabulary.service';
+import { DictionaryAdapter, DictionaryProviderId, lookupSchema, LookupResult } from './dictionary/contracts';
+import { FreeDictionaryAdapter } from './dictionary/free.adapter';
+import { MerriamWebsterAdapter } from './dictionary/merriam-webster.adapter';
+import { OxfordAdapter } from './dictionary/oxford.adapter';
+import { DictionaryTransport } from './dictionary/transport';
 
-const oxfordResponse = z.object({ results: z.array(z.object({ id: z.string().optional(), word: z.string().optional(), lexicalEntries: z.array(z.object({ lexicalCategory: z.object({ id: z.string() }), text: z.string().optional(), entries: z.array(z.object({ pronunciations: z.array(z.object({ phoneticSpelling: z.string().optional(), dialects: z.array(z.string()).optional(), audioFile: z.string().url().optional() })).optional(), senses: z.array(z.object({ id: z.string().optional(), definitions: z.array(z.string()).optional(), examples: z.array(z.object({ text: z.string() })).optional() })).optional() })).optional() })).optional() })).optional() });
+export const saveDictionarySchema = lookupSchema.omit({ allowFallback: true }).extend({
+  providerEntryRef: z.string().min(1).max(512), providerSenseRef: z.string().min(1).max(512),
+  meaningVi: vocabSchema.shape.meaningVi, deckId: vocabSchema.shape.deckId,
+  tags: vocabSchema.shape.tags, notes: vocabSchema.shape.notes,
+  cefr: vocabSchema.shape.cefr, cefrSource: vocabSchema.shape.cefrSource,
+  manualFields: z.object({
+    definitionEn: vocabSchema.shape.definitionEn, exampleEn: vocabSchema.shape.exampleEn,
+    exampleVi: vocabSchema.shape.exampleVi, phonetic: vocabSchema.shape.phonetic,
+  }).strict().default({ definitionEn: '', exampleEn: '', exampleVi: '', phonetic: '' }),
+}).strict();
+
 @Injectable()
 export class DictionaryService {
-  constructor(@Inject(Database) private db: Database, @Inject(VocabularyService) private vocabulary: VocabularyService) {}
-  private persistFields() { return config.OXFORD_PERSIST_FIELDS.split(',').map(s => s.trim()).filter(s => ['definitionEn', 'exampleEn', 'phonetic'].includes(s)); }
-  status() { return { provider: 'oxford', configured: !!(config.OXFORD_APP_ID && config.OXFORD_APP_KEY), licenseMode: config.DICTIONARY_LICENSE_MODE, persistenceSupported: config.DICTIONARY_LICENSE_MODE === 'PERSIST_LICENSED' && this.persistFields().length > 0, persistFields: this.persistFields(), cefr: { status: 'not_verified', value: null }, manualEntryAvailable: true }; }
+  private adapters: Record<DictionaryProviderId, DictionaryAdapter>;
+  constructor(@Inject(Database) private db: Database, @Inject(VocabularyService) private vocabulary: VocabularyService, @Inject(DictionaryTransport) private transport: DictionaryTransport) {
+    this.adapters = {
+      free_dictionary: new FreeDictionaryAdapter(),
+      merriam_webster: new MerriamWebsterAdapter({ apiKey: config.MERRIAM_WEBSTER_API_KEY, persistenceApproved: config.MERRIAM_WEBSTER_PERSISTENCE_APPROVED === 'true', persistFields: config.MERRIAM_WEBSTER_PERSIST_FIELDS }),
+      oxford: new OxfordAdapter({ appId: config.OXFORD_APP_ID, appKey: config.OXFORD_APP_KEY, environment: config.OXFORD_ENVIRONMENT, licenseMode: config.DICTIONARY_LICENSE_MODE, persistenceApproved: config.OXFORD_PERSISTENCE_APPROVED === 'true', persistFields: config.OXFORD_PERSIST_FIELDS }),
+    };
+  }
+  async status(userId: string) {
+    const settings = await this.db.userSettings.findUniqueOrThrow({ where: { userId } });
+    return { defaultProvider: settings.dictionaryProvider, allowFallback: settings.dictionaryFallbackEnabled, manualEntryAvailable: true,
+      providers: Object.values(this.adapters).map(adapter => adapter.status()) };
+  }
+  private async fromProvider(userId: string, provider: DictionaryProviderId, query: z.infer<typeof lookupSchema>): Promise<LookupResult> {
+    const adapter = this.adapters[provider], status = adapter.status();
+    const base = { query: { word: query.word, partOfSpeech: query.partOfSpeech, dialect: query.dialect }, requestedProvider: provider, provider, configured: status.configured, licenseMode: status.licenseMode, attribution: status.attribution, fallbackUsed: false, persistenceSupported: status.persistenceSupported };
+    if (!status.configured) return { ...base, candidates: [], suggestions: [], warnings: [`${status.name} chưa được cấu hình API key. Bạn có thể chọn nguồn miễn phí hoặc nhập thủ công.`] };
+    const response = await this.transport.get(userId, provider, adapter.request(query), provider === 'merriam_webster' ? config.MERRIAM_WEBSTER_DAILY_LIMIT : undefined);
+    if (response === null) return { ...base, candidates: [], suggestions: [], warnings: ['Không tìm thấy từ phù hợp trong nguồn đã chọn.'] };
+    const result = adapter.parse(response, query);
+    if (!result.candidates.length && !result.suggestions.length) result.warnings.push('Nguồn không có nghĩa phù hợp với từ loại đã chọn. Bạn có thể đổi từ loại hoặc nhập thủ công.');
+    return { ...base, ...result };
+  }
+  async lookup(userId: string, body: unknown): Promise<LookupResult> {
+    const input = lookupSchema.parse(body);
+    const settings = await this.db.userSettings.findUniqueOrThrow({ where: { userId } });
+    const provider = input.provider ?? settings.dictionaryProvider as DictionaryProviderId;
+    const allowFallback = input.allowFallback ?? settings.dictionaryFallbackEnabled;
+    let failure: unknown;
+    let result: LookupResult | undefined;
+    try {
+      result = await this.fromProvider(userId, provider, input);
+      if (result.candidates.length || !allowFallback || provider === 'free_dictionary') return result;
+    } catch (error) {
+      if (!allowFallback || provider === 'free_dictionary') throw error;
+      // Validation, DB failures and implementation errors must not be disguised as provider fallback.
+      if (!(error instanceof HttpException)) throw error;
+      failure = error;
+    }
+    try {
+      const fallback = await this.fromProvider(userId, 'free_dictionary', input);
+      return { ...fallback, requestedProvider: provider, fallbackUsed: true, warnings: [`Nguồn ${this.adapters[provider].status().name} chưa trả được nghĩa phù hợp. Đã dùng Free Dictionary API theo tùy chọn dự phòng của bạn.`, ...fallback.warnings] };
+    } catch (fallbackError) {
+      if (result) return { ...result, warnings: [...result.warnings, 'Nguồn dự phòng cũng chưa khả dụng. Bạn vẫn có thể nhập thủ công.'] };
+      throw failure ?? fallbackError;
+    }
+  }
   async saveLicensed(userId: string, body: unknown) {
-    if (!this.status().persistenceSupported) fail(403, 'PERSISTENCE_NOT_LICENSED', 'Chưa có quyền lưu các trường nội dung của nhà cung cấp.');
-    const input = z.object({ word: z.string().trim().min(1).max(100), partOfSpeech: pos, dialect: z.enum(['en-us', 'en-gb']), providerEntryRef: z.string().min(1).max(200), providerSenseRef: z.string().min(1).max(200), meaningVi: vocabSchema.shape.meaningVi, deckId: vocabSchema.shape.deckId, tags: vocabSchema.shape.tags, notes: vocabSchema.shape.notes }).strict().parse(body);
-    // Fetch again server-side; browser payload cannot attest vendor content or rights.
-    const lookup = await this.lookup(userId, { word: input.word, partOfSpeech: input.partOfSpeech, dialect: input.dialect });
+    // Preserve the existing legacy Oxford call without accepting a claim of licensed content.
+    if (body && typeof body === 'object' && !('provider' in body) && !this.adapters.oxford.status().persistenceSupported) fail(403, 'PERSISTENCE_NOT_LICENSED', 'Chưa có quyền lưu các trường nội dung của nhà cung cấp.');
+    const input = saveDictionarySchema.parse(body);
+    const provider = input.provider ?? 'oxford';
+    if (!this.adapters[provider].status().persistenceSupported) fail(403, 'PERSISTENCE_NOT_LICENSED', 'Nguồn này chỉ cho phép xem tham khảo. Hãy tự biên soạn nội dung khi lưu.');
+    await this.vocabulary.requireDeck(this.db, userId, input.deckId);
+    // Refetch from the explicit source, without fallback, to verify selected content/rights server-side.
+    const lookup = await this.fromProvider(userId, provider, input);
     const candidate = lookup.candidates.find(c => c.providerEntryRef === input.providerEntryRef);
     const sense = candidate?.senses.find(s => s.providerSenseRef === input.providerSenseRef);
-    if (!candidate || !sense) fail(422, 'SENSE_NOT_FOUND', 'Không tìm thấy nghĩa đã chọn.');
-    const fields = this.persistFields();
-    const data = vocabSchema.parse({ word: candidate.lemma, partOfSpeech: input.partOfSpeech, dialect: input.dialect, meaningVi: input.meaningVi, deckId: input.deckId, tags: input.tags, notes: input.notes,
-      definitionEn: fields.includes('definitionEn') ? sense.definition.value || '' : '', exampleEn: fields.includes('exampleEn') ? sense.examples.items[0] || '' : '', phonetic: fields.includes('phonetic') ? sense.pronunciations[0]?.ipa || '' : '', cefr: 'unknown', cefrSource: 'unknown' });
+    if (!candidate || !sense) fail(422, 'SENSE_NOT_FOUND', 'Nghĩa đã thay đổi hoặc không còn tồn tại. Vui lòng tra lại.');
+    if (!sense.persistFields.length) fail(403, 'PERSISTENCE_NOT_LICENSED', 'Nghĩa đã chọn chưa có nguồn và quyền lưu được xác nhận.');
+    const fields = sense.persistFields;
+    const pronunciation = sense.pronunciations.find(p => p.dialect === input.dialect && p.ipa) ?? sense.pronunciations.find(p => p.dialect === 'unknown' && p.ipa);
+    const providerValues = { definitionEn: sense.definition.value || '', exampleEn: sense.examples.items[0] || '', phonetic: pronunciation?.ipa || '' };
+    const persistedFields = fields.filter(field => !!providerValues[field]);
+    const data = vocabSchema.parse({
+      ...input.manualFields, word: candidate.lemma, partOfSpeech: candidate.partOfSpeech, dialect: input.dialect,
+      meaningVi: input.meaningVi, deckId: input.deckId, tags: input.tags, notes: input.notes, cefr: input.cefr, cefrSource: input.cefr === 'unknown' ? 'unknown' : 'manual',
+      ...Object.fromEntries(persistedFields.map(field => [field, providerValues[field]])),
+    });
     return this.db.forUser(userId, async tx => {
       const item = await this.vocabulary.createInTx(tx, userId, data);
-      await tx.vocabItem.update({ where: { id: item.id }, data: { sourceKind: 'licensed', provenance: json({ provider: 'oxford', providerEntryRef: input.providerEntryRef, providerSenseRef: input.providerSenseRef, licenseMode: 'PERSIST_LICENSED', persistedFields: fields, exportableFields: [], retrievedAt: new Date() }) } });
-      return { ...item, sourceKind: 'licensed' };
+      const saved = await tx.vocabItem.update({ where: { id: item.id }, data: { sourceKind: persistedFields.length ? 'licensed' : 'user', provenance: json({
+        provider, providerEntryRef: input.providerEntryRef, providerSenseRef: input.providerSenseRef,
+        licenseMode: lookup.licenseMode, persistedFields, exportableFields: provider === 'free_dictionary' ? persistedFields : [],
+        attribution: sense.attribution, retrievedAt: new Date(), cefrMethod: input.cefr === 'unknown' ? 'unknown' : 'manual',
+      }) }, include: { decks: true } });
+      return vocabDto(saved);
     });
-  }
-  async lookup(userId: string, body: unknown) {
-    const input = z.object({ word: z.string().trim().min(1).max(100), partOfSpeech: pos, dialect: z.enum(['en-gb', 'en-us']).default('en-us') }).strict().parse(body);
-    if (!this.status().configured) return { ...this.status(), query: input, candidates: [], warnings: ['Chưa cấu hình nhà cung cấp từ điển. Bạn có thể tự nhập nội dung.'] };
-    const started = Date.now();
-    const url = new URL(`https://od-api.oxforddictionaries.com/api/v2/words/${input.dialect}`);
-    url.searchParams.set('q', input.word); url.searchParams.set('lexicalCategory', input.partOfSpeech); url.searchParams.set('strictMatch', 'false');
-    let response: globalThis.Response;
-    try { response = await fetch(url, { headers: { app_id: config.OXFORD_APP_ID!, app_key: config.OXFORD_APP_KEY!, Accept: 'application/json' }, signal: AbortSignal.timeout(8000), redirect: 'error' }); }
-    catch { fail(503, 'DICTIONARY_UNAVAILABLE', 'Từ điển tạm thời không khả dụng. Bạn vẫn có thể nhập thủ công.'); }
-    await this.db.providerUsage.create({ data: { provider: 'oxford', userId, status: response.status, latencyMs: Date.now() - started } });
-    if (!response.ok) {
-      if (response.status === 404) return { ...this.status(), query: input, candidates: [], warnings: ['Không tìm thấy từ phù hợp.'] };
-      fail(response.status === 429 ? 429 : 503, 'DICTIONARY_UNAVAILABLE', 'Nhà cung cấp từ điển chưa khả dụng.');
-    }
-    const parsed = oxfordResponse.safeParse(await response.json());
-    if (!parsed.success) fail(502, 'PROVIDER_CONTRACT_CHANGED', 'Định dạng nhà cung cấp đã thay đổi.');
-    const candidates = (parsed.data.results ?? []).flatMap(result => (result.lexicalEntries ?? []).filter(entry => entry.lexicalCategory.id === input.partOfSpeech).map(entry => ({
-      lemma: entry.text || result.word || input.word, partOfSpeech: entry.lexicalCategory.id, providerEntryRef: result.id,
-      senses: (entry.entries ?? []).flatMap(e => (e.senses ?? []).map(sense => ({ providerSenseRef: sense.id,
-        definition: { status: sense.definitions?.length ? 'available' : 'unavailable', value: sense.definitions?.[0] ?? null },
-        examples: { status: sense.examples?.length ? 'available' : 'unavailable', items: sense.examples?.map(e => e.text) ?? [] },
-        pronunciations: (e.pronunciations ?? []).map(p => ({ dialect: input.dialect, ipa: p.phoneticSpelling, audio: { status: p.audioFile ? 'available' : 'unavailable', playbackUrl: p.audioFile } })),
-        cefr: { status: 'not_verified', value: null, source: null },
-      }))),
-    })));
-    // Provider text remains in this response only: no DB/cache/queue/log persistence.
-    return { query: input, provider: 'oxford', licenseMode: config.DICTIONARY_LICENSE_MODE, candidates, warnings: [this.status().persistenceSupported ? 'Chỉ được lưu các trường đã cấu hình quyền; không bao gồm quyền xuất nội dung nhà cung cấp.' : 'Nội dung tra cứu chỉ dùng để tham khảo trong phiên. Hãy tự biên soạn nghĩa và ví dụ khi lưu từ.'] };
   }
 }

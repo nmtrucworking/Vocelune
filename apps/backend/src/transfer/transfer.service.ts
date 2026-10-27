@@ -54,6 +54,7 @@ export class TransferService {
         const target = mapping[source] || aliases[source] || source;
         if (source === 'example_only' && String(value).toLowerCase() === 'true') result.exampleOnly = true;
         if (allowed.has(target)) result[target] = value;
+        if (source === 'source_note' && typeof value === 'string' && value.trim()) result.notes = `${String(result.notes ?? '')}\nNguồn nhập: ${value}`.trim();
       }
       if (typeof result.tags === 'string') result.tags = result.tags.split(';').map(t => t.trim()).filter(Boolean);
       if (typeof result.templates === 'string') result.templates = result.templates.split(';').map(t => t.trim()).filter(Boolean);
@@ -172,26 +173,31 @@ export class TransferService {
       const cards = await tx.card.findMany({ where: { userId } });
       const reviews = await tx.reviewLog.findMany({ where: { userId } });
       const attempts = await tx.testAttempt.findMany({ where: { userId }, include: { questions: { orderBy: { ordinal: 'asc' } }, definition: true } });
-      const licensed = await tx.vocabItem.findMany({ where: { userId, sourceKind: 'licensed' }, select: { id: true } });
-      const licensedIds = new Set(licensed.map(v => v.id));
+      const licensed = await tx.vocabItem.findMany({ where: { userId, sourceKind: 'licensed' }, select: { id: true, provenance: true } });
+      const restrictedIds = new Set(licensed.filter(item => {
+        const provenance = item.provenance as { provider?: string; licenseMode?: string; persistedFields?: string[]; exportableFields?: string[] } | null;
+        return !provenance || provenance.provider !== 'free_dictionary' || provenance.licenseMode !== 'OPEN_LICENSE' || (provenance.persistedFields ?? []).some(field => !provenance.exportableFields?.includes(field));
+      }).map(v => v.id));
       const { userId: _, ...settings } = user.settings!;
       return { schemaVersion: 1, exportedAt: new Date().toISOString(), user: { ...user, settings }, vocabulary: vocabulary.map(item => {
         const dto = vocabDto(item);
         if (item.sourceKind === 'licensed') {
-          const fields = (item.provenance as { persistedFields?: string[] } | null)?.persistedFields ?? [];
-          for (const field of fields) if (['definitionEn', 'exampleEn', 'phonetic'].includes(field)) (dto as any)[field] = '';
+          const provenance = item.provenance as { provider?: string; licenseMode?: string; persistedFields?: string[]; exportableFields?: string[] } | null;
+          const exportable = provenance?.provider === 'free_dictionary' && provenance.licenseMode === 'OPEN_LICENSE' ? provenance.exportableFields ?? [] : [];
+          for (const field of provenance?.persistedFields ?? []) if (['definitionEn', 'exampleEn', 'phonetic'].includes(field) && !exportable.includes(field)) (dto as any)[field] = '';
         }
         return dto;
       }), decks: decks.map(deckDto), cards: cards.map(cardDto), reviewLogs: reviews.map(reviewDto), testAttempts: attempts.map(a => {
         const dto = this.tests.dto(a);
-        return { ...dto, questions: dto.questions.map(q => licensedIds.has(q.vocabId) ? { id: q.id, vocabId: q.vocabId, contentRedacted: true } : q) };
+        return { ...dto, questions: dto.questions.map(q => restrictedIds.has(q.vocabId) ? { id: q.id, vocabId: q.vocabId, contentRedacted: true } : q) };
       }) };
     }, { isolationLevel: 'RepeatableRead' });
     if (format === 'json') return { buffer: Buffer.from(JSON.stringify(data, null, 2)), mime: 'application/json', ext: 'json' };
-    const rows = data.vocabulary.map(v => [v.word, v.partOfSpeech, v.meaningVi, v.definitionEn, v.exampleEn, v.exampleVi, v.phonetic, v.cefr, v.tags.join(';'), v.notes, 'en_vi', 'false']);
-    if (format === 'csv') return { buffer: Buffer.from('\uFEFF' + [columns.join(','), ...rows.map(r => r.map(csvCell).join(','))].join('\r\n')), mime: 'text/csv; charset=utf-8', ext: 'csv' };
+    const exportColumns = [...columns, 'source_note'];
+    const rows = data.vocabulary.map(v => [v.word, v.partOfSpeech, v.meaningVi, v.definitionEn, v.exampleEn, v.exampleVi, v.phonetic, v.cefr, v.tags.join(';'), v.notes, 'en_vi', 'false', JSON.stringify(v.provenance ?? {})]);
+    if (format === 'csv') return { buffer: Buffer.from('\uFEFF' + [exportColumns.join(','), ...rows.map(r => r.map(csvCell).join(','))].join('\r\n')), mime: 'text/csv; charset=utf-8', ext: 'csv' };
     if (format === 'xlsx') {
-      const book = new ExcelJS.Workbook(); book.addWorksheet('Vocabulary').addRows([columns, ...rows]);
+      const book = new ExcelJS.Workbook(); book.addWorksheet('Vocabulary').addRows([exportColumns, ...rows]);
       return { buffer: Buffer.from(await book.xlsx.writeBuffer()), mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' };
     }
     fail(422, 'INVALID_FORMAT', 'Chỉ hỗ trợ csv, xlsx và json.');

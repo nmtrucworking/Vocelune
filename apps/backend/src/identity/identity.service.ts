@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { DateTime } from 'luxon';
+import { dictionaryProvider } from '../integrations/dictionary/contracts';
 import { Database, json } from '../common/db';
 import { fail, normalized } from '../common/http';
 import { settingsDto } from '../common/serializers';
@@ -13,6 +14,7 @@ export const credentials = z.object({ email: z.string().trim().email().max(254).
 export const settingsSchema = z.object({
   displayName: z.string().trim().min(1).max(100).optional(),
   timezone: z.string().refine(zone => DateTime.now().setZone(zone).isValid, 'Invalid IANA timezone').optional(),
+  dictionaryProvider: dictionaryProvider.optional(), dictionaryFallbackEnabled: z.boolean().optional(),
   englishDialect: z.enum(['en-us', 'en-gb']).optional(), desiredRetention: z.number().min(0.85).max(0.95).optional(),
   newCardsPerDay: z.number().int().min(0).max(1000).optional(), dayStartHour: z.number().int().min(0).max(23).optional(),
   soundEnabled: z.boolean().optional(), autoPronounce: z.boolean().optional(), language: z.enum(['vi', 'en']).optional(), theme: z.enum(['light', 'dark', 'system']).optional(),
