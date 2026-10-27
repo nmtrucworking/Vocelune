@@ -1,29 +1,17 @@
 {
-  "name": "vocelune",
-  "version": "0.1.0",
+  "name": "vocelune-workspace",
+  "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
-  },
-  "dependencies": {
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.475.0",
-    "next": "^15.1.7",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "tailwind-merge": "^3.0.1",
-    "ts-fsrs": "^5.1.1"
-  },
-  "devDependencies": {
-    "@types/node": "^22.13.1",
-    "@types/react": "^19.0.8",
-    "@types/react-dom": "^19.0.3",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.5.1",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.3"
+    "dev": "npm run dev --workspace=@vocelune/frontend",
+    "dev:frontend": "npm run dev --workspace=@vocelune/frontend",
+    "dev:backend": "echo 'Backend not initialized yet. Ready in apps/backend.'",
+    "build": "npm run build --workspace=@vocelune/frontend",
+    "build:frontend": "npm run build --workspace=@vocelune/frontend",
+    "start": "npm run start --workspace=@vocelune/frontend",
+    "lint": "npm run lint --workspace=@vocelune/frontend"
   }
 }

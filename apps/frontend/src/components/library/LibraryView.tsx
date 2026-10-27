@@ -19,6 +19,7 @@ import { VocabItem, PartOfSpeech, CEFRLevel } from '@/types';
 import { speakWord } from '@/lib/speech';
 import { WordDetailModal } from './WordDetailModal';
 import { formatRelativeTime } from '@/lib/utils';
+import { AudioButton } from '../common/AudioButton';
 
 interface LibraryViewProps {
   onOpenQuickAdd: () => void;
@@ -210,21 +211,12 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                     >
                       {/* Word & Audio */}
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              speakWord(
-                                item.word,
-                                item.dialect || settings.englishDialect
-                              );
-                            }}
-                            className="p-1 text-slate-400 hover:text-brand-primary rounded transition-colors"
-                            title="Nghe phát âm"
-                          >
-                            <Volume2 className="w-3.5 h-3.5" />
-                          </button>
+                        <div className="flex items-center gap-2.5">
+                          <AudioButton
+                            text={item.word}
+                            dialect={item.dialect || settings.englishDialect}
+                            size="sm"
+                          />
                           <div>
                             <span className="font-bold text-sm text-brand-ink">
                               {item.word}

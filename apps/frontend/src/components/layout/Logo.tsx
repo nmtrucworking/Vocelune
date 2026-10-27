@@ -22,9 +22,9 @@ export function Logo({ size = 'md', showTagline = false, className = '' }: LogoP
 
   return (
     <Link href="/app/dashboard" className={`flex items-center gap-2.5 group select-none ${className}`}>
-      {/* Recall Orbit SVG Icon */}
+      {/* Recall Orbit SVG Icon with Floating/Pulse Animation */}
       <div
-        className={`${iconSizes[size]} relative flex items-center justify-center rounded-control bg-brand-primary text-white shadow-sm transition-transform duration-200 group-hover:scale-105`}
+        className={`${iconSizes[size]} relative flex items-center justify-center rounded-control bg-brand-primary text-white shadow-sm transition-all duration-300 group-hover:scale-105 group-hover:shadow-elevated animate-float-orbit`}
       >
         <svg
           viewBox="0 0 32 32"
@@ -42,7 +42,7 @@ export function Logo({ size = 'md', showTagline = false, className = '' }: LogoP
             stroke="white"
             strokeWidth="1.5"
             strokeDasharray="2 3"
-            strokeOpacity="0.65"
+            strokeOpacity="0.75"
           />
           {/* Center Memory Card */}
           <rect
@@ -53,6 +53,7 @@ export function Logo({ size = 'md', showTagline = false, className = '' }: LogoP
             rx="2.5"
             fill="white"
             fillOpacity="0.95"
+            className="transition-transform duration-200 group-hover:scale-105"
           />
           {/* Subtle V negative cut */}
           <path
@@ -62,15 +63,15 @@ export function Logo({ size = 'md', showTagline = false, className = '' }: LogoP
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          {/* Memory nodes on orbit */}
-          <circle cx="6.5" cy="11.5" r="1.6" fill="#D8F7F1" />
-          <circle cx="25.5" cy="20.5" r="1.6" fill="#D8F7F1" />
+          {/* Memory nodes on orbit with subtle glowing pulse */}
+          <circle cx="6.5" cy="11.5" r="1.6" fill="#D8F7F1" className="animate-pulse" />
+          <circle cx="25.5" cy="20.5" r="1.6" fill="#D8F7F1" className="animate-pulse" />
         </svg>
       </div>
 
       <div className="flex flex-col">
         <span
-          className={`font-semibold tracking-tight text-brand-ink leading-none ${textSizes[size]}`}
+          className={`font-extrabold tracking-tight text-brand-ink leading-none ${textSizes[size]}`}
         >
           Vocelune
         </span>

@@ -20,6 +20,8 @@ import {
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, TestAttempt, TestQuestion, CEFRLevel, PartOfSpeech } from '@/types';
 import { speakWord } from '@/lib/speech';
+import { triggerConfetti } from '@/lib/confetti';
+import { AudioButton } from '../common/AudioButton';
 
 type TestState = 'builder' | 'running' | 'completed';
 
@@ -158,6 +160,10 @@ export function TestModule() {
     saveTestAttempt(attempt);
     setCompletedAttempt(attempt);
     setTestState('completed');
+
+    if (score / questions.length >= 0.7) {
+      triggerConfetti();
+    }
   };
 
   // BUILDER VIEW
@@ -391,14 +397,16 @@ export function TestModule() {
           <div className="py-4 text-center space-y-2">
             {q.mode === 'listening' ? (
               <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => speakWord(q.correctAnswer, settings.englishDialect)}
-                  className="w-14 h-14 mx-auto rounded-full bg-brand-primarySoft text-brand-primary hover:bg-brand-primary hover:text-white transition-colors flex items-center justify-center shadow-xs"
-                >
-                  <Volume2 className="w-7 h-7" />
-                </button>
-                <p className="text-xs text-text-secondary">Nhấn loa để nghe từ</p>
+                <div className="inline-block p-2 rounded-full bg-brand-primarySoft animate-glow-pulse">
+                  <AudioButton
+                    text={q.correctAnswer}
+                    dialect={settings.englishDialect}
+                    size="lg"
+                  />
+                </div>
+                <p className="text-xs text-text-secondary">
+                  Nhấn loa để nghe phát âm và chọn đáp án đúng bên dưới
+                </p>
               </div>
             ) : (
               <div>

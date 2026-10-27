@@ -1,0 +1,39 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "meta": {
+    "brand": "Vocelune",
+    "version": "1.0.0",
+    "status": "proposal-not-legally-cleared"
+  },
+  "color": {
+    "brand": {
+      "primary": { "$type": "color", "$value": "#5949E8" },
+      "primarySoft": { "$type": "color", "$value": "#EAE8FF" },
+      "ink": { "$type": "color", "$value": "#17213B" },
+      "canvas": { "$type": "color", "$value": "#F7F8FC" },
+      "mint": { "$type": "color", "$value": "#D8F7F1" }
+    },
+    "surface": {
+      "base": { "$type": "color", "$value": "#FFFFFF" }
+    },
+    "text": {
+      "secondary": { "$type": "color", "$value": "#59647D" }
+    },
+    "semantic": {
+      "successText": { "$type": "color", "$value": "#1B786E" },
+      "warningText": { "$type": "color", "$value": "#9B5B0E" },
+      "errorText": { "$type": "color", "$value": "#B93655" }
+    }
+  },
+  "fontFamily": {
+    "sans": { "$type": "fontFamily", "$value": ["Be Vietnam Pro", "Inter", "system-ui", "sans-serif"] },
+    "mono": { "$type": "fontFamily", "$value": ["IBM Plex Mono", "ui-monospace", "monospace"] }
+  },
+  "radius": {
+    "card": { "$type": "dimension", "$value": "16px" },
+    "control": { "$type": "dimension", "$value": "12px" }
+  },
+  "duration": {
+    "reveal": { "$type": "duration", "$value": "200ms" }
+  }
+}

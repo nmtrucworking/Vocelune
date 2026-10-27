@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-primary: #5949e8;
+  --brand-primary-hover: #4a3bd6;
+  --brand-primary-soft: #eae8ff;
+  --brand-ink: #17213b;
+  --brand-canvas: #f7f8fc;
+  --surface-base: #ffffff;
+  --text-secondary: #59647d;
+  --success-text: #1b786e;
+  --warning-text: #9b5b0e;
+  --error-text: #b93655;
+  --font-sans: "Be Vietnam Pro", Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+body {
+  color: var(--brand-ink);
+  background-color: var(--brand-canvas);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 3D Flashcard Perspective & Flip Utilities */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.transform-style-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+/* Card Reveal Smooth Animation (Brand Guidelines Section 6.4: 180-240ms) */
+.card-flip-transition {
+  transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Orbit Path Float Keyframe */
+@keyframes float-orbit {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(1.5deg);
+  }
+}
+
+.animate-float-orbit {
+  animation: float-orbit 4s ease-in-out infinite;
+}
+
+/* Pulsing memory node glow */
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(89, 73, 232, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(89, 73, 232, 0.5);
+  }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2.5s infinite;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Logo } from '@/components/layout/Logo';
 import { speakWord } from '@/lib/speech';
+import { AudioButton } from '@/components/common/AudioButton';
 
 export default function LandingPage() {
   const [demoRevealed, setDemoRevealed] = useState(false);
@@ -105,15 +106,12 @@ export default function LandingPage() {
                 <span className="text-text-secondary italic">(adjective)</span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => speakWord('resilient', 'en-us')}
-                className="p-1.5 rounded-md text-brand-primary hover:bg-brand-primarySoft transition-colors flex items-center gap-1 text-xs font-semibold"
-                title="Nghe phát âm"
-              >
-                <Volume2 className="w-4 h-4" />
-                <span>US</span>
-              </button>
+              <AudioButton
+                text="resilient"
+                dialect="en-us"
+                size="sm"
+                showLabel
+              />
             </div>
 
             {/* Word Display */}

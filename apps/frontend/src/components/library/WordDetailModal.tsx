@@ -5,6 +5,7 @@ import { X, Volume2, Trash2, Check, Sparkles } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, PartOfSpeech, CEFRLevel } from '@/types';
 import { speakWord } from '@/lib/speech';
+import { AudioButton } from '../common/AudioButton';
 
 interface WordDetailModalProps {
   vocab: VocabItem | null;
@@ -208,13 +209,11 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
                 </div>
               </div>
 
-              <button
-                onClick={handleSpeak}
-                className="p-2.5 rounded-full bg-brand-primarySoft text-brand-primary hover:bg-brand-primary hover:text-white transition-colors"
-                title="Nghe phát âm"
-              >
-                <Volume2 className="w-5 h-5" />
-              </button>
+              <AudioButton
+                text={vocab.word}
+                dialect={vocab.dialect || settings.englishDialect}
+                size="md"
+              />
             </div>
 
             {/* Meaning */}

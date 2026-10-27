@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { speakWord } from '@/lib/speech';
+import { AudioButton } from '../common/AudioButton';
 
 interface DashboardViewProps {
   onOpenQuickAdd: () => void;
@@ -270,15 +271,11 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
                   </p>
                 </div>
 
-                <button
-                  onClick={() =>
-                    speakWord(item.word, item.dialect || settings.englishDialect)
-                  }
-                  className="p-1.5 text-slate-400 hover:text-brand-primary rounded-lg transition-colors"
-                  title="Nghe phát âm"
-                >
-                  <Volume2 className="w-4 h-4" />
-                </button>
+                <AudioButton
+                  text={item.word}
+                  dialect={item.dialect || settings.englishDialect}
+                  size="sm"
+                />
               </div>
             ))}
 
