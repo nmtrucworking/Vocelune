@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { AuthForm } from '../auth/AuthForm';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { QuickAddModal } from '../library/QuickAddModal';
@@ -14,7 +15,7 @@ interface AppShellProps {
 export function AppShell({ children, pageTitle }: AppShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const { isLoaded } = useVocelune();
+  const { isLoaded, user, error, clearError, refresh } = useVocelune();
 
   if (!isLoaded) {
     return (
@@ -26,6 +27,8 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
       </div>
     );
   }
+
+  if (!user) return <><AuthForm />{error && <div role="alert" className="fixed bottom-4 inset-x-4 bg-rose-50 border border-rose-200 p-4 rounded-lg text-sm text-rose-700">{error}<button className="ml-4 underline" onClick={() => void refresh().then(clearError).catch(() => {})}>Thử kết nối lại</button></div>}</>;
 
   return (
     <div className="min-h-screen bg-brand-canvas flex flex-col md:flex-row text-brand-ink antialiased">
@@ -56,6 +59,7 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
         />
 
         <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">
+          {error && <div role="alert" className="mb-4 flex justify-between bg-rose-50 text-rose-700 border border-rose-200 rounded-lg p-3 text-sm">{error}<button onClick={clearError} aria-label="Đóng thông báo">×</button></div>}
           {children}
         </main>
       </div>

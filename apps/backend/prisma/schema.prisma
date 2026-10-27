@@ -1,0 +1,342 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id @default(uuid()) @db.Uuid
+  email String @unique @db.VarChar(254)
+  passwordHash String
+  displayName String @db.VarChar(100)
+  role String @default("learner")
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  settings UserSettings?
+  sessions AuthSession[]
+  resetTokens PasswordResetToken[]
+  schedulerConfigs SchedulerConfig[]
+  decks Deck[]
+  vocabulary VocabItem[]
+  cards Card[]
+  reviews ReviewLog[]
+  studySessions StudySession[]
+  testDefinitions TestDefinition[]
+  testAttempts TestAttempt[]
+  imports ImportJob[]
+  media MediaAsset[]
+  outbox EmailOutbox[]
+}
+model UserSettings {
+  userId String @id @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timezone String @default("Asia/Ho_Chi_Minh")
+  englishDialect String @default("en-us")
+  desiredRetention Float @default(0.9)
+  newCardsPerDay Int @default(20)
+  dayStartHour Int @default(4)
+  soundEnabled Boolean @default(true)
+  autoPronounce Boolean @default(true)
+  language String @default("vi")
+  theme String @default("light")
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+model AuthSession {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String @unique
+  csrfHash String
+  expiresAt DateTime @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([userId, expiresAt])
+}
+model PasswordResetToken {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String @unique
+  expiresAt DateTime @db.Timestamptz(3)
+  usedAt DateTime? @db.Timestamptz(3)
+}
+model SchedulerConfig {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version Int
+  modelVersion String @default("FSRS-6")
+  libraryVersion String @default("5.4.2")
+  parameters Json
+  retention Float
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  cards Card[]
+  reviews ReviewLog[]
+  @@unique([userId, version])
+}
+model Lexeme {
+  id String @id @default(uuid()) @db.Uuid
+  lemma String @db.VarChar(100)
+  normalized String @db.VarChar(100)
+  language String @default("en")
+  partOfSpeech String
+  vocabulary VocabItem[]
+  @@unique([normalized, partOfSpeech, language])
+}
+// Each vocabulary item is one user-authored sense; multiple senses share a lexeme.
+model VocabItem {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lexemeId String @db.Uuid
+  lexeme Lexeme @relation(fields: [lexemeId], references: [id])
+  senseKey String
+  word String @db.VarChar(100)
+  partOfSpeech String
+  meaningVi String
+  definitionEn String @default("")
+  exampleEn String @default("")
+  exampleVi String @default("")
+  phonetic String @default("")
+  dialect String @default("en-us")
+  cefr String @default("unknown")
+  cefrSource String @default("manual")
+  tags String[] @default([])
+  notes String @default("")
+  sourceKind String @default("user")
+  provenance Json?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+  decks DeckItem[]
+  cards Card[]
+  media VocabMedia[]
+  @@index([userId, createdAt, id])
+  @@index([userId, lexemeId, senseKey])
+  @@index([tags], type: Gin)
+}
+model Deck {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name String @db.VarChar(100)
+  normalizedName String
+  description String @default("")
+  color String @default("#4F46E5")
+  icon String @default("book")
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+  items DeckItem[]
+  @@index([userId, createdAt])
+}
+model DeckItem {
+  deckId String @db.Uuid
+  deck Deck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  vocabItemId String @db.Uuid
+  vocabItem VocabItem @relation(fields: [vocabItemId], references: [id], onDelete: Cascade)
+  addedAt DateTime @default(now()) @db.Timestamptz(3)
+  @@id([deckId, vocabItemId])
+  @@index([vocabItemId])
+}
+model Card {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vocabItemId String @db.Uuid
+  vocabItem VocabItem @relation(fields: [vocabItemId], references: [id], onDelete: Cascade)
+  template String @default("en_vi")
+  state String @default("new")
+  dueAt DateTime @default(now()) @db.Timestamptz(3)
+  lastReviewedAt DateTime? @db.Timestamptz(3)
+  stability Float @default(0)
+  difficulty Float @default(0)
+  elapsedDays Float @default(0)
+  scheduledDays Float @default(0)
+  learningSteps Int @default(0)
+  reps Int @default(0)
+  lapses Int @default(0)
+  version Int @default(1)
+  suspended Boolean @default(false)
+  buriedUntil DateTime? @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+  schedulerConfigId String @db.Uuid
+  schedulerConfig SchedulerConfig @relation(fields: [schedulerConfigId], references: [id], onDelete: NoAction)
+  reviews ReviewLog[]
+  reveals Reveal[]
+  @@unique([vocabItemId, template])
+  @@index([userId, dueAt])
+}
+model StudySession {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mode String @default("flashcard")
+  kind String @default("srs")
+  settingsSnapshot Json
+  startedAt DateTime @default(now()) @db.Timestamptz(3)
+  endedAt DateTime? @db.Timestamptz(3)
+  reveals Reveal[]
+  reviews ReviewLog[]
+  attempts StudyAttempt[]
+  @@index([userId, startedAt])
+}
+model Reveal {
+  id String @id @default(uuid()) @db.Uuid
+  sessionId String @db.Uuid
+  session StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  cardId String @db.Uuid
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardVersion Int
+  expiresAt DateTime @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+  @@index([sessionId, cardId])
+}
+model ReviewLog {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId String @db.Uuid
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  sessionId String? @db.Uuid
+  session StudySession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  clientRequestId String
+  requestHash String
+  rating Int
+  source String @default("srs_study")
+  beforeState String
+  afterState String
+  beforeSnapshot Json
+  afterSnapshot Json
+  response Json
+  schedulerConfigId String @db.Uuid
+  schedulerConfig SchedulerConfig @relation(fields: [schedulerConfigId], references: [id], onDelete: NoAction)
+  durationMs Int
+  reviewedAt DateTime @default(now()) @db.Timestamptz(3)
+  voidedAt DateTime? @db.Timestamptz(3)
+  @@unique([userId, clientRequestId])
+  @@index([userId, reviewedAt])
+  @@index([cardId, reviewedAt])
+}
+model StudyAttempt {
+  id String @id @default(uuid()) @db.Uuid
+  sessionId String @db.Uuid
+  session StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  vocabItemId String @db.Uuid
+  mode String
+  answer String
+  isCorrect Boolean
+  durationMs Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+model TestDefinition {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title String
+  blueprint Json
+  scoringVersion String @default("exact-nfc-v1")
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  attempts TestAttempt[]
+}
+model TestAttempt {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  definitionId String @db.Uuid
+  definition TestDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  seed String
+  status String @default("in_progress")
+  startedAt DateTime @default(now()) @db.Timestamptz(3)
+  deadlineAt DateTime @db.Timestamptz(3)
+  submittedAt DateTime? @db.Timestamptz(3)
+  score Int @default(0)
+  maxScore Int
+  questions TestQuestion[]
+  @@index([userId, startedAt])
+}
+model TestQuestion {
+  id String @id @default(uuid()) @db.Uuid
+  attemptId String @db.Uuid
+  attempt TestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  ordinal Int
+  vocabId String @db.Uuid
+  cardId String? @db.Uuid
+  snapshot Json
+  correctAnswer String
+  userAnswer String?
+  answerVersion Int @default(0)
+  isCorrect Boolean?
+  answeredAt DateTime? @db.Timestamptz(3)
+  srsAppliedAt DateTime? @db.Timestamptz(3)
+  @@unique([attemptId, ordinal])
+}
+model ImportJob {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idempotencyKey String
+  payloadHash String
+  status String @default("preview")
+  deckId String @db.Uuid
+  policy String @default("skip")
+  rows Json
+  result Json?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+}
+model MediaAsset {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  objectKey String @unique
+  mime String
+  sizeBytes Int
+  purpose String
+  status String @default("pending")
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+  vocabulary VocabMedia[]
+  @@index([userId, status])
+}
+model VocabMedia {
+  vocabItemId String @db.Uuid
+  vocabItem VocabItem @relation(fields: [vocabItemId], references: [id], onDelete: Cascade)
+  mediaId String @db.Uuid
+  media MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  @@id([vocabItemId, mediaId])
+}
+model AuditLog {
+  id String @id @default(uuid()) @db.Uuid
+  actorId String? @db.Uuid
+  action String
+  resourceId String?
+  metadata Json?
+  occurredAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([actorId, occurredAt])
+}
+model ProviderUsage {
+  id String @id @default(uuid()) @db.Uuid
+  provider String
+  userId String @db.Uuid
+  status Int
+  latencyMs Int
+  occurredAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([occurredAt])
+}
+model EmailOutbox {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  to String
+  subject String
+  text String
+  status String @default("pending")
+  attempts Int @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  lockedAt DateTime? @db.Timestamptz(3)
+  sentAt DateTime? @db.Timestamptz(3)
+  @@index([status, createdAt])
+}

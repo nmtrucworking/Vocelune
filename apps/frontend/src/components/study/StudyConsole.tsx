@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Volume2,
@@ -26,9 +26,11 @@ import { triggerConfetti } from '@/lib/confetti';
 import { AudioButton } from '../common/AudioButton';
 
 export function StudyConsole() {
-  const { dueCards, vocabItems, gradeCard, undoLastReview, canUndo, settings } =
+  const { dueCards, vocabItems, gradeCard, undoLastReview, canUndo, settings, revealCard, cards } =
     useVocelune();
 
+  const grading = useRef(false);
+  const [revealReady, setRevealReady] = useState(false);
   // Create an active queue from due cards (or all cards if none due)
   const [queue, setQueue] = useState<Card[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -62,6 +64,13 @@ export function StudyConsole() {
     return vocabItems.find((v) => v.id === currentCard.vocabItemId);
   }, [currentCard, vocabItems]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setRevealReady(false);
+    if (isFlipped && currentCard) void revealCard(currentCard.id).then(() => { if (!cancelled) setRevealReady(true); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isFlipped, currentCard?.id, revealCard]);
+
   // Compute next interval previews for 4 ratings
   const intervalPreviews: IntervalPreview[] = useMemo(() => {
     if (!currentCard) return [];
@@ -91,11 +100,13 @@ export function StudyConsole() {
 
   // Grade action (FSRS rating 1-4)
   const handleGrade = useCallback(
-    (rating: FSRSRating) => {
-      if (!currentCard) return;
+    async (rating: FSRSRating) => {
+      if (!currentCard || !revealReady || grading.current) return;
+      grading.current = true;
 
       const durationMs = Date.now() - startTime;
-      gradeCard(currentCard.id, rating, durationMs);
+      try { await gradeCard(currentCard.id, rating, durationMs); } catch { grading.current = false; return; }
+      grading.current = false;
 
       setCompletedCount((prev) => prev + 1);
       setSlideDirection(1);
@@ -114,8 +125,20 @@ export function StudyConsole() {
         triggerConfetti();
       }
     },
-    [currentCard, startTime, gradeCard, currentIndex, queue.length]
+    [currentCard, revealReady, startTime, gradeCard, currentIndex, queue.length]
   );
+
+  const handleUndo = useCallback(async () => {
+    if (!canUndo || grading.current) return;
+    grading.current = true;
+    try {
+      if (await undoLastReview()) {
+        setSlideDirection(-1); setCurrentIndex(i => Math.max(0, i - 1));
+        setCompletedCount(c => Math.max(0, c - 1)); setIsFlipped(false); setStartTime(Date.now());
+      }
+    } catch { /* The server explains expired/conflicting undo via the app banner. */ }
+    finally { grading.current = false; }
+  }, [canUndo, undoLastReview]);
 
   // Keyboard shortcut listener
   useEffect(() => {
@@ -142,17 +165,14 @@ export function StudyConsole() {
       if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey || !isFlipped)) {
         if (canUndo) {
           e.preventDefault();
-          undoLastReview();
-          setSlideDirection(-1);
-          if (currentIndex > 0) setCurrentIndex((prev) => prev - 1);
-          setIsFlipped(false);
+          void handleUndo();
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFlipped, handleFlip, handleGrade, canUndo, undoLastReview, currentIndex, mode, typedSubmitted]);
+  }, [isFlipped, handleFlip, handleGrade, canUndo, undoLastReview, currentIndex, mode, typedSubmitted, handleUndo]);
 
   // Handle Typed Submit: Validate and then flip card to reveal full details
   const handleTypedSubmit = (e: React.FormEvent) => {
@@ -188,7 +208,7 @@ export function StudyConsole() {
           </h2>
           <p className="text-sm text-text-secondary max-w-md mx-auto leading-relaxed">
             {completedCount > 0
-              ? `Tuyệt vời! Bạn đã hoàn thành ${completedCount} lượt truy hồi chất lượng cao. Thuật toán FSRS-7 đã ghi nhận và tối ưu thời điểm quay lại.`
+              ? `Tuyệt vời! Bạn đã hoàn thành ${completedCount} lượt truy hồi chất lượng cao. Thuật toán FSRS-6 đã ghi nhận và tối ưu thời điểm quay lại.`
               : 'Hiện không có thẻ nào đến hạn. Bạn có thể thêm từ mới hoặc ôn luyện tự do trong Thư viện.'}
           </p>
         </div>
@@ -196,7 +216,7 @@ export function StudyConsole() {
         {completedCount > 0 && (
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-control bg-brand-primarySoft text-brand-primary text-xs font-semibold shadow-xs">
             <Sparkles className="w-4 h-4 text-brand-primary animate-spin" />
-            <span>Đã đồng bộ lịch ôn tập FSRS-7</span>
+            <span>Đã đồng bộ lịch ôn tập FSRS-6</span>
           </div>
         )}
 
@@ -626,7 +646,8 @@ export function StudyConsole() {
                           key={preview.rating}
                           whileHover={{ scale: 1.03 }}
                           whileTap={{ scale: 0.96 }}
-                          onClick={() => handleGrade(preview.rating)}
+                          disabled={!revealReady}
+                          onClick={() => void handleGrade(preview.rating)}
                           className={`p-2.5 rounded-control border border-slate-200 text-left transition-all shadow-xs flex flex-col justify-between ${
                             ratingStyles[preview.rating]
                           }`}
@@ -659,7 +680,7 @@ export function StudyConsole() {
       {/* Undo Button & Footnote */}
       <div className="flex items-center justify-between px-2 text-xs text-text-secondary">
         <button
-          onClick={undoLastReview}
+          onClick={() => void handleUndo()}
           disabled={!canUndo}
           className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg hover:bg-slate-100 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
         >
@@ -668,7 +689,7 @@ export function StudyConsole() {
         </button>
 
         <span className="text-[11px] text-slate-400">
-          Mô hình: FSRS-7 • Tỷ lệ mục tiêu: {(settings.desiredRetention * 100).toFixed(0)}%
+          Mô hình: FSRS-6 • Tỷ lệ mục tiêu: {(settings.desiredRetention * 100).toFixed(0)}%
         </span>
       </div>
     </div>

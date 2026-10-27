@@ -72,6 +72,7 @@ export interface Card {
   lapses: number;
   version: number;
   suspended?: boolean;
+  learningSteps?: number;
 }
 
 export interface ReviewLog {
@@ -88,6 +89,8 @@ export interface ReviewLog {
 export type StudyMode = 'flashcard' | 'typed' | 'mcq' | 'listening';
 
 export interface TestQuestion {
+  direction?: CardTemplate;
+  audioPrompt?: string;
   id: string;
   vocabId: string;
   mode: 'mcq' | 'typed' | 'listening';
@@ -96,6 +99,7 @@ export interface TestQuestion {
   options?: string[];
   correctAnswer: string;
   userAnswer?: string;
+  answerVersion?: number;
   isCorrect?: boolean;
   explanation: string;
   cefr: CEFRLevel;
@@ -107,6 +111,7 @@ export interface TestAttempt {
   title: string;
   startedAt: string;
   submittedAt?: string;
+  deadlineAt?: string;
   durationSeconds: number;
   questions: TestQuestion[];
   score: number;

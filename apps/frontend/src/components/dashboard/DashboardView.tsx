@@ -132,11 +132,11 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
           </div>
           <div className="flex items-baseline gap-1.5 pt-1">
             <span className="text-3xl font-extrabold text-brand-ink">
-              {observedRetention}%
+              {observedRetention === null ? 'Chưa có dữ liệu' : `${observedRetention}%`}
             </span>
           </div>
           <p className="text-[11px] text-emerald-700 font-medium">
-            Duy trì sát mức 90%
+            Chỉ tính lượt ôn ở trạng thái Review
           </p>
         </div>
 

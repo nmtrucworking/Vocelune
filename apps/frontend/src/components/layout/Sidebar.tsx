@@ -153,7 +153,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
         )}
 
         <div className="px-2 text-[11px] text-slate-400 text-center">
-          Vocelune v1.0 • FSRS-7 Engine
+          Vocelune v1.0 • FSRS-6 Engine
         </div>
       </div>
     </aside>

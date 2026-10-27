@@ -51,7 +51,7 @@ export default function LandingPage() {
         <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-primarySoft text-brand-primary text-xs font-semibold">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>A rhythm for every word • Chuẩn thuật toán FSRS-7</span>
+            <span>A rhythm for every word • Chuẩn thuật toán FSRS-6</span>
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-brand-ink leading-[1.12]">
@@ -204,7 +204,7 @@ export default function LandingPage() {
                 <Calendar className="w-5 h-5" />
               </div>
               <h3 className="font-bold text-base text-brand-ink">
-                Thuật toán FSRS-7 thích ứng
+                Thuật toán FSRS-6 thích ứng
               </h3>
               <p className="text-xs text-text-secondary leading-relaxed">
                 Mô hình Free Spaced Repetition Scheduler tính toán độ ổn định (S) và độ khó (D) cho từng thẻ đơn lẻ, tối ưu thời gian ôn tập.

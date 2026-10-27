@@ -17,6 +17,7 @@ import {
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, PartOfSpeech, CEFRLevel } from '@/types';
 import { speakWord } from '@/lib/speech';
+import { DeckManager } from './DeckManager';
 import { WordDetailModal } from './WordDetailModal';
 import { formatRelativeTime } from '@/lib/utils';
 import { AudioButton } from '../common/AudioButton';
@@ -79,6 +80,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
+      <DeckManager />
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>

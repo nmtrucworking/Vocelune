@@ -52,7 +52,7 @@ export function toFSRSCard(card: Card): FSRSCard {
     lapses: card.lapses,
     state: mapStringToState(card.state),
     last_review: card.lastReviewedAt ? new Date(card.lastReviewedAt) : undefined,
-    learning_steps: card.state === 'learning' || card.state === 'relearning' ? 1 : 0,
+    learning_steps: card.learningSteps ?? 0,
   };
 }
 
@@ -100,7 +100,7 @@ export function formatIntervalDuration(targetDate: Date, now: Date): string {
 // Get preview intervals for the 4 FSRS choices
 export function getFSRSPreviews(card: Card, desiredRetention: number = 0.9): IntervalPreview[] {
   const now = new Date();
-  const params = generatorParameters({ request_retention: desiredRetention });
+  const params = generatorParameters({ request_retention: desiredRetention, enable_fuzz: false, learning_steps: ['1m', '10m'], relearning_steps: ['10m'] });
   const f = fsrs(params);
   const fCard = toFSRSCard(card);
   const repeated = f.repeat(fCard, now);
@@ -131,7 +131,7 @@ export function applyFSRSReview(
   reviewTime: Date = new Date(),
   desiredRetention: number = 0.9
 ): { updatedCard: Card; nextState: CardState } {
-  const params = generatorParameters({ request_retention: desiredRetention });
+  const params = generatorParameters({ request_retention: desiredRetention, enable_fuzz: false, learning_steps: ['1m', '10m'], relearning_steps: ['10m'] });
   const f = fsrs(params);
   const fCard = toFSRSCard(card);
   const repeated = f.repeat(fCard, reviewTime);

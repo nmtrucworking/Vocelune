@@ -52,9 +52,9 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
     speakWord(vocab.word, vocab.dialect || settings.englishDialect);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateVocabItem(vocab.id, {
+    try { await updateVocabItem(vocab.id, {
       word: word.trim(),
       meaningVi: meaningVi.trim(),
       definitionEn: definitionEn.trim(),
@@ -65,13 +65,12 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
       partOfSpeech: pos,
       notes: notes.trim(),
     });
-    setIsEditing(false);
+    setIsEditing(false); } catch { /* Error banner is shown by the app. */ }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (confirm(`Bạn có chắc muốn xóa từ "${vocab.word}" khỏi thư viện?`)) {
-      deleteVocabItem(vocab.id);
-      onClose();
+      try { await deleteVocabItem(vocab.id); onClose(); } catch { /* Keep modal open. */ }
     }
   };
 

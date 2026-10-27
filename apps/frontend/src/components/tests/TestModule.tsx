@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   CheckSquare,
   Play,
@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, TestAttempt, TestQuestion, CEFRLevel, PartOfSpeech } from '@/types';
+import { api, post } from '@/lib/api';
 import { speakWord } from '@/lib/speech';
 import { triggerConfetti } from '@/lib/confetti';
 import { AudioButton } from '../common/AudioButton';
@@ -26,7 +27,7 @@ import { AudioButton } from '../common/AudioButton';
 type TestState = 'builder' | 'running' | 'completed';
 
 export function TestModule() {
-  const { vocabItems, decks, testAttempts, saveTestAttempt, applyTestToSRS, settings } =
+  const { vocabItems, decks, testAttempts, refresh, cards, user, settings } =
     useVocelune();
 
   // Test Builder Configuration
@@ -44,6 +45,12 @@ export function TestModule() {
   const [secondsRemaining, setSecondsRemaining] = useState(0);
   const [completedAttempt, setCompletedAttempt] = useState<TestAttempt | null>(null);
   const [appliedToSRS, setAppliedToSRS] = useState(false);
+  const [testError, setTestError] = useState('');
+  const [selfRatings, setSelfRatings] = useState<Record<string, number>>({});
+  const answerSequences = useRef(new Map<string, number>());
+  const activeAttempt = useRef<TestAttempt | null>(null);
+  const submitting = useRef(false);
+  const autosaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   // Filter eligible words
   const eligibleVocab = vocabItems.filter((v) => {
@@ -52,124 +59,76 @@ export function TestModule() {
     return true;
   });
 
-  // Start Test session
-  const handleStartTest = () => {
-    if (eligibleVocab.length === 0) return;
-
-    const count = Math.min(questionCount, eligibleVocab.length);
-    // Shuffle words
-    const shuffled = [...eligibleVocab].sort(() => 0.5 - Math.random()).slice(0, count);
-
-    // Generate snapshot questions
-    const generated: TestQuestion[] = shuffled.map((v, i) => {
-      // Determine question type
-      let qMode: 'mcq' | 'typed' | 'listening' = 'mcq';
-      if (testMode === 'typed') qMode = 'typed';
-      else if (testMode === 'mixed') {
-        const modes: ('mcq' | 'typed' | 'listening')[] = ['mcq', 'typed', 'listening'];
-        qMode = modes[i % 3];
-      }
-
-      // Generate distractors for MCQ
-      let options: string[] | undefined = undefined;
-      if (qMode === 'mcq' || qMode === 'listening') {
-        const otherMeanings = vocabItems
-          .filter((item) => item.id !== v.id)
-          .map((item) => item.meaningVi);
-        const shuffledOthers = [...otherMeanings]
-          .sort(() => 0.5 - Math.random())
-          .slice(0, 3);
-        options = [v.meaningVi, ...shuffledOthers].sort(() => 0.5 - Math.random());
-      }
-
-      return {
-        id: `q_${i}_${v.id}`,
-        vocabId: v.id,
-        mode: qMode,
-        prompt: qMode === 'listening' ? 'Nghe từ và chọn nghĩa phù hợp:' : v.word,
-        subPrompt: qMode === 'typed' ? v.meaningVi : v.phonetic,
-        options,
-        correctAnswer: qMode === 'typed' ? v.word.trim().toLowerCase() : v.meaningVi,
-        explanation: `${v.word} (${v.partOfSpeech}) [${v.cefr}]: ${v.meaningVi}. Ví dụ: ${v.exampleEn || ''}`,
-        cefr: v.cefr,
-        pos: v.partOfSpeech,
-      };
-    });
-
-    setQuestions(generated);
-    setAnswers({});
-    setCurrentIndex(0);
-    setSecondsRemaining(timeLimitMinutes * 60);
-    setTestState('running');
-    setAppliedToSRS(false);
+  const loadAttempt = (attempt: TestAttempt) => {
+    activeAttempt.current = attempt;
+    answerSequences.current = new Map(attempt.questions.map(q => [q.id, q.answerVersion || 0]));
+    setQuestions(attempt.questions); setAnswers(Object.fromEntries(attempt.questions.map(q => [q.id, q.userAnswer || ''])));
+    setCurrentIndex(0); setSecondsRemaining(Math.max(0, Math.ceil((new Date(attempt.deadlineAt!).getTime() - Date.now()) / 1000)));
+    setTestState('running'); setAppliedToSRS(false); setSelfRatings({});
   };
-
-  // Timer countdown
   useEffect(() => {
-    if (testState !== 'running' || secondsRemaining <= 0) return;
-
-    const timer = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          handleSubmitTest();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [testState, secondsRemaining]);
-
-  // Answer handler
-  const handleSelectAnswer = (qId: string, answer: string) => {
-    setAnswers((prev) => ({ ...prev, [qId]: answer }));
+    if (!user) return;
+    const marker = sessionStorage.getItem(`vocelune_active_test_${user.id}`);
+    if (marker) void api<TestAttempt>(`/test-attempts/${marker}/report`).then(attempt => {
+      if (attempt.status === 'in_progress') loadAttempt(attempt);
+      else { setCompletedAttempt(attempt); setTestState('completed'); sessionStorage.removeItem(`vocelune_active_test_${user.id}`); }
+    }).catch(() => sessionStorage.removeItem(`vocelune_active_test_${user.id}`));
+    return () => { autosaveTimers.current.forEach(clearTimeout); };
+  }, [user?.id]);
+  const handleStartTest = async () => {
+    if (submitting.current) return; submitting.current = true; setTestError('');
+    try {
+      const definition = await post<{ id: string }>('/tests', { title: `Bài kiểm tra (${questionCount} câu)`, deckIds: selectedDeckId === 'all' ? [] : [selectedDeckId], cefr: selectedCefr === 'all' ? [] : [selectedCefr], size: questionCount, mode: testMode, durationSeconds: timeLimitMinutes * 60 });
+      const attempt = await post<TestAttempt>(`/tests/${definition.id}/attempts`);
+      sessionStorage.setItem(`vocelune_active_test_${user!.id}`, attempt.id); loadAttempt(attempt);
+    } catch (e) { setTestError(e instanceof Error ? e.message : 'Không thể tạo bài kiểm tra.'); }
+    finally { submitting.current = false; }
   };
-
-  // Submit & grade test
-  const handleSubmitTest = () => {
-    let score = 0;
-    const evaluatedQuestions = questions.map((q) => {
-      const userAns = answers[q.id]?.trim().toLowerCase() || '';
-      const correctAns = q.correctAnswer.trim().toLowerCase();
-      const isCorrect = userAns === correctAns;
-
-      if (isCorrect) score++;
-
-      return {
-        ...q,
-        userAnswer: answers[q.id] || '',
-        isCorrect,
-      };
-    });
-
-    const attempt: TestAttempt = {
-      id: `attempt_${Date.now()}`,
-      title: `Bài kiểm tra (${questions.length} câu)`,
-      startedAt: new Date(Date.now() - (timeLimitMinutes * 60 - secondsRemaining) * 1000).toISOString(),
-      submittedAt: new Date().toISOString(),
-      durationSeconds: timeLimitMinutes * 60 - secondsRemaining,
-      questions: evaluatedQuestions,
-      score,
-      maxScore: questions.length,
-      deckIds: [selectedDeckId],
-      status: 'completed',
+  const handleSelectAnswer = (qId: string, answer: string) => {
+    setAnswers(previous => ({ ...previous, [qId]: answer }));
+    const clientSequence = (answerSequences.current.get(qId) || 0) + 1;
+    answerSequences.current.set(qId, clientSequence);
+    const timer = autosaveTimers.current.get(qId); if (timer) clearTimeout(timer);
+    autosaveTimers.current.set(qId, setTimeout(() => {
+      const attempt = activeAttempt.current; if (!attempt || submitting.current) return;
+      void api(`/test-attempts/${attempt.id}/answers/${qId}`, { method: 'PUT', body: JSON.stringify({ answer, clientSequence }) }).catch(e => setTestError(e.message));
+    }, 500));
+  };
+  const handleSubmitTest = async () => {
+    if (!activeAttempt.current || submitting.current) return;
+    submitting.current = true; setTestError(''); autosaveTimers.current.forEach(clearTimeout);
+    try {
+      const result = await post<TestAttempt>(`/test-attempts/${activeAttempt.current.id}/submit`, { answers });
+      setCompletedAttempt(result); setTestState('completed'); sessionStorage.removeItem(`vocelune_active_test_${user!.id}`); await refresh();
+      if (result.score / result.maxScore >= 0.7) triggerConfetti();
+    } catch (e) { setTestError(e instanceof Error ? e.message : 'Không thể nộp bài.'); }
+    finally { submitting.current = false; }
+  };
+  useEffect(() => {
+    if (testState !== 'running' || !activeAttempt.current) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((new Date(activeAttempt.current!.deadlineAt!).getTime() - Date.now()) / 1000));
+      setSecondsRemaining(remaining);
+      if (remaining === 0) void handleSubmitTest();
     };
-
-    saveTestAttempt(attempt);
-    setCompletedAttempt(attempt);
-    setTestState('completed');
-
-    if (score / questions.length >= 0.7) {
-      triggerConfetti();
-    }
+    const timer = setInterval(tick, 1000); return () => clearInterval(timer);
+  }, [testState, answers]);
+  const applyTestToSRS = async () => {
+    if (!completedAttempt || appliedToSRS) return;
+    const ratings = completedAttempt.questions.filter(q => selfRatings[q.id]).map(q => {
+      const card = cards.find(c => c.vocabItemId === q.vocabId && c.template === (q.direction || 'en_vi'));
+      return card ? { questionId: q.id, rating: selfRatings[q.id], expectedCardVersion: card.version } : null;
+    }).filter(Boolean);
+    if (!ratings.length) { setTestError('Chọn mức tự đánh giá cho ít nhất một câu có thẻ tương ứng.'); return; }
+    try { await post(`/test-attempts/${completedAttempt.id}/apply-srs`, { confirmation: true, ratings }); setAppliedToSRS(true); await refresh(); }
+    catch (e) { setTestError(e instanceof Error ? e.message : 'Không thể cập nhật lịch ôn.'); }
   };
 
   // BUILDER VIEW
   if (testState === 'builder') {
     return (
       <div className="space-y-8 max-w-4xl mx-auto">
+        {testError && <p role="alert" className="bg-rose-50 text-rose-700 p-3 rounded-lg text-sm">{testError}</p>}
         {/* Header */}
         <div>
           <h2 className="text-xl font-bold text-brand-ink">Tạo bài kiểm tra</h2>
@@ -360,6 +319,7 @@ export function TestModule() {
 
     return (
       <div className="max-w-2xl mx-auto space-y-6">
+        {testError && <p role="alert" className="bg-rose-50 text-rose-700 p-3 rounded-lg text-sm">{testError}</p>}
         {/* Top Header: Progress & Timer */}
         <div className="flex items-center justify-between text-xs">
           <div className="font-semibold text-brand-ink">
@@ -399,7 +359,7 @@ export function TestModule() {
               <div className="space-y-3">
                 <div className="inline-block p-2 rounded-full bg-brand-primarySoft animate-glow-pulse">
                   <AudioButton
-                    text={q.correctAnswer}
+                    text={q.audioPrompt || ''}
                     dialect={settings.englishDialect}
                     size="lg"
                   />
@@ -500,6 +460,7 @@ export function TestModule() {
 
     return (
       <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in zoom-in-95 duration-200">
+        {testError && <p role="alert" className="bg-rose-50 text-rose-700 p-3 rounded-lg text-sm">{testError}</p>}
         {/* Score Banner Card */}
         <div className="bg-surface-base border border-slate-200/90 rounded-card shadow-card p-6 md:p-8 text-center space-y-4">
           <div className="w-16 h-16 mx-auto rounded-full bg-brand-primarySoft text-brand-primary flex items-center justify-center">
@@ -540,11 +501,10 @@ export function TestModule() {
               </div>
             </div>
 
+            <p className="text-xs text-text-secondary">Tự đánh giá sau khi xem đáp án. Chỉ các câu có thẻ đúng chiều truy hồi mới được ghi vào lịch ôn.</p>
+            {completedAttempt.questions.filter(q => cards.some(c => c.vocabItemId === q.vocabId && c.template === (q.direction || 'en_vi'))).map((q, i) => <label key={q.id} className="flex justify-between gap-3 text-xs">Câu {i + 1}: {q.prompt}<select disabled={appliedToSRS} value={selfRatings[q.id] || ''} onChange={e => setSelfRatings(r => ({ ...r, [q.id]: Number(e.target.value) }))} className="border rounded p-1"><option value="">Bỏ qua</option><option value="1">Again — Không nhớ</option><option value="2">Hard — Nhớ khó khăn</option><option value="3">Good — Nhớ được</option><option value="4">Easy — Rất dễ</option></select></label>)}
             <button
-              onClick={() => {
-                applyTestToSRS(completedAttempt.id);
-                setAppliedToSRS(true);
-              }}
+              onClick={() => void applyTestToSRS()}
               disabled={appliedToSRS}
               className="w-full py-2 bg-brand-primary text-white rounded-control text-xs font-semibold hover:bg-brand-primaryHover disabled:bg-emerald-600 transition-colors flex items-center justify-center gap-1.5"
             >

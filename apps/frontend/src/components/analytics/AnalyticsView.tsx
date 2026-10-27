@@ -32,55 +32,24 @@ import { useVocelune } from '@/context/VoceluneContext';
 
 export function AnalyticsView() {
   const {
+    analytics,
     vocabItems,
     cards,
     reviewLogs,
     streak,
     observedRetention,
+    retentionSampleSize,
     weakWords,
     activityHeatmap,
     settings,
   } = useVocelune();
 
   const totalReviews = reviewLogs.filter((l) => !l.voidedAt).length;
-  const masteredCount = cards.filter((c) => c.stability >= 21).length;
+  const masteredCount = new Set(cards.filter(c => c.state === 'review' && c.stability >= 30).map(c => c.vocabItemId)).size;
 
-  // 1. FSRS Retrievability Curve Simulation: R(t) = (1 + t / (9 * S))^(-1)
-  const averageStability = useMemo(() => {
-    const scored = cards.filter((c) => c.stability > 0);
-    if (scored.length === 0) return 4.5;
-    return scored.reduce((acc, c) => acc + c.stability, 0) / scored.length;
-  }, [cards]);
-
-  const forgettingCurveData = useMemo(() => {
-    const points = [];
-    const S = averageStability;
-    for (let day = 0; day <= 30; day += 2) {
-      // FSRS forgetting power law formula
-      const retrievability = Math.round(Math.pow(1 + day / (9 * S), -1) * 100);
-      points.push({
-        day: `Ngày ${day}`,
-        retrievability,
-        threshold: 90, // Desired retention target
-      });
-    }
-    return points;
-  }, [averageStability]);
-
-  // 2. Next 7 days due forecast
-  const forecastData = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      const dateStr = d.toISOString().split('T')[0];
-      const count = cards.filter((c) => c.dueAt.split('T')[0] === dateStr).length;
-
-      return {
-        day: d.toLocaleDateString('vi-VN', { weekday: 'short', day: 'numeric' }),
-        cards: count,
-      };
-    });
-  }, [cards]);
+  const averageStability = analytics?.averageStability ?? 0;
+  const forgettingCurveData = analytics?.forgettingCurveData ?? [];
+  const forecastData = analytics?.forecastData ?? [];
 
   // 3. Card state distribution (Pie Chart)
   const stateDistributionData = useMemo(() => {
@@ -122,10 +91,10 @@ export function AnalyticsView() {
           </div>
           <div className="flex items-baseline gap-2 pt-1">
             <span className="text-3xl font-extrabold text-brand-ink">
-              {observedRetention}%
+              {observedRetention === null ? 'Chưa có dữ liệu' : `${observedRetention}%`}
             </span>
             <span className="text-[11px] text-text-secondary font-mono">
-              (N={totalReviews})
+              (N={retentionSampleSize})
             </span>
           </div>
           <p className="text-[11px] text-emerald-700 font-semibold">
@@ -167,7 +136,7 @@ export function AnalyticsView() {
             <span className="text-xs text-text-secondary">ngày (S)</span>
           </div>
           <p className="text-[11px] text-brand-primary font-semibold">
-            Chỉ số Stability FSRS-7
+            Chỉ số Stability FSRS-6
           </p>
         </motion.div>
 
@@ -187,7 +156,7 @@ export function AnalyticsView() {
             <span className="text-xs text-text-secondary">/ {vocabItems.length} từ</span>
           </div>
           <p className="text-[11px] text-teal-700 font-semibold">
-            Độ ổn định &ge; 21 ngày
+            Thẻ Review có độ ổn định ≥ 30 ngày
           </p>
         </motion.div>
       </div>
@@ -207,10 +176,11 @@ export function AnalyticsView() {
               </p>
             </div>
             <span className="text-[11px] px-2.5 py-1 rounded-full font-mono font-bold bg-brand-primarySoft text-brand-primary">
-              R(t) = (1 + t/9S)⁻¹
+              Dự báo FSRS-6
             </span>
           </div>
 
+          {forgettingCurveData.length === 0 && <p className="text-xs text-slate-500">Chưa có lượt ôn để tính dự báo. Đây là xác suất mô hình, không phải tỷ lệ nhớ đã đo.</p>}
           <div className="h-64 w-full pt-2">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={forgettingCurveData}>
@@ -238,7 +208,7 @@ export function AnalyticsView() {
                             Khả năng truy hồi: {payload[0]?.value}%
                           </p>
                           <p className="text-[10px] text-slate-300">
-                            Ngưỡng cần ôn: 90%
+                            Mục tiêu: {(settings.desiredRetention * 100).toFixed(0)}%
                           </p>
                         </div>
                       );

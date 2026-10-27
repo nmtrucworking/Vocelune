@@ -16,37 +16,28 @@ import { Dialect } from '@/types';
 import { speakWord } from '@/lib/speech';
 
 export function ProfileSettingsView() {
-  const { settings, updateSettings, resetAllData } = useVocelune();
+  const { settings, updateSettings, logout } = useVocelune();
 
   const [displayName, setDisplayName] = useState(settings.displayName);
   const [dialect, setDialect] = useState<Dialect>(settings.englishDialect);
   const [retention, setRetention] = useState<number>(settings.desiredRetention);
   const [newCardsLimit, setNewCardsLimit] = useState<number>(settings.newCardsPerDay);
   const [autoPronounce, setAutoPronounce] = useState(settings.autoPronounce);
+  const [timezone, setTimezone] = useState(settings.timezone);
+  const [dayStartHour, setDayStartHour] = useState(settings.dayStartHour);
   const [isSaved, setIsSaved] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateSettings({
+    try { await updateSettings({
       displayName: displayName.trim() || 'Người học',
       englishDialect: dialect,
       desiredRetention: Number(retention),
       newCardsPerDay: Number(newCardsLimit),
-      autoPronounce,
+      autoPronounce, timezone, dayStartHour,
     });
     setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2500);
-  };
-
-  const handleResetData = () => {
-    if (
-      confirm(
-        'Bạn có chắc chắn muốn đặt lại toàn bộ dữ liệu về trạng thái ban đầu? Tất cả từ đã thêm mới và lịch sử ôn sẽ được khởi tạo lại.'
-      )
-    ) {
-      resetAllData();
-      alert('Đã khôi phục dữ liệu ban đầu thành công.');
-    }
+    setTimeout(() => setIsSaved(false), 2500); } catch { setIsSaved(false); }
   };
 
   return (
@@ -81,8 +72,8 @@ export function ProfileSettingsView() {
               <label className="text-xs font-semibold text-brand-ink">Múi giờ</label>
               <input
                 type="text"
-                disabled
-                value={settings.timezone}
+                value={timezone}
+                onChange={e => setTimezone(e.target.value)}
                 className="w-full px-3.5 py-2 text-xs border rounded-control bg-slate-100 text-slate-500 font-mono"
               />
             </div>
@@ -94,10 +85,11 @@ export function ProfileSettingsView() {
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <Brain className="w-4 h-4 text-brand-primary" />
             <h3 className="text-sm font-semibold text-brand-ink">
-              Cấu hình thuật toán FSRS-7 (Spaced Repetition)
+              Cấu hình thuật toán FSRS-6 (Spaced Repetition)
             </h3>
           </div>
 
+          <label className="block text-xs font-semibold">Giờ bắt đầu ngày học (0–23)<input type="number" min={0} max={23} value={dayStartHour} onChange={e => setDayStartHour(Number(e.target.value))} className="block border rounded-lg p-2 mt-2" /></label>
           {/* Desired Retention Slider */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -126,7 +118,7 @@ export function ProfileSettingsView() {
             </div>
 
             <p className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-control border border-slate-100">
-              * Tăng retention lên 95% giúp nhớ lâu hơn nhưng làm tăng gấp đôi số thẻ cần ôn mỗi ngày. Ngưỡng 90% là điểm cân bằng tối ưu giữa nỗ lực và hiệu quả.
+              * Tăng mục tiêu có thể tăng khối lượng ôn. Cấu hình mới áp dụng cho lượt ôn tiếp theo; lịch sử và thời điểm đến hạn hiện tại được giữ lại.
             </p>
           </div>
 
@@ -225,11 +217,11 @@ export function ProfileSettingsView() {
         <div className="flex items-center justify-between pt-2">
           <button
             type="button"
-            onClick={handleResetData}
+            onClick={() => void logout().catch(() => {})}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-control transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Khôi phục dữ liệu ban đầu</span>
+            <span>Đăng xuất</span>
           </button>
 
           <button
