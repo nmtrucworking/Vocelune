@@ -132,18 +132,20 @@ Dự án đã có sẵn tệp cấu hình **[render.yaml](file:///Users/nguyenmi
 
 ## 5. Bước 4: Triển khai Frontend
 
-### Tùy chọn A: Triển khai trên Cloudflare Pages
+### Tùy chọn A: Triển khai trên Cloudflare Pages (Khuyên dùng)
+
+Trên Cloudflare Pages, bạn **KHÔNG** cần dùng `@cloudflare/next-on-pages` (vì đã cũ và xung đột phiên bản với Next.js 15). Dự án đã có sẵn lệnh build tĩnh tối ưu:
 
 1. Đăng nhập Cloudflare Dashboard ➔ **Workers & Pages** ➔ **Create application** ➔ **Pages** ➔ **Connect to Git**.
 2. Chọn repo `nmtrucworking/Vocelune`.
 3. Cấu hình bản dựng:
-   * **Framework preset**: `Next.js`
-   * **Root directory**: `apps/frontend`
-   * **Build command**: `npm run build`
-   * **Build output directory**: `.next`
+   * **Framework preset**: `None` (hoặc `Next.js (Static HTML Export)`)
+   * **Build command**: `npm run build:pages`
+   * **Build output directory**: `apps/frontend/out`
+   * **Root directory**: để trống (chạy từ thư mục gốc của repo)
 4. Biến môi trường (Environment Variables):
    * `NODE_VERSION`: `22`
-   * `API_PROXY_TARGET`: URL của backend Render (ví dụ `https://vocelune-api.onrender.com`)
+   * `API_PROXY_TARGET`: URL backend Render (ví dụ `https://vocelune-api.onrender.com`). Quá trình build sẽ tự động tạo file `_redirects` để Cloudflare Edge proxy trực tiếp các yêu cầu `/api/v1/*` về backend, giải quyết triệt để vấn đề Cookie và CORS!
 5. Bấm **Save and Deploy**.
 
 ### Tùy chọn B: Triển khai Frontend trên Render
