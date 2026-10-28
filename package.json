@@ -17,6 +17,7 @@
     "worker": "npm run worker --workspace=@vocelune/backend",
     "build:backend": "npm run build --workspace=@vocelune/backend",
     "start:backend": "npm run start --workspace=@vocelune/backend",
+    "start:backend:prod": "npm run start:prod --workspace=@vocelune/backend",
     "typecheck": "npm run typecheck --workspace=@vocelune/backend && tsc --noEmit -p apps/frontend/tsconfig.json",
     "test": "npm run test --workspace=@vocelune/backend",
     "db:generate": "npm run db:generate --workspace=@vocelune/backend",

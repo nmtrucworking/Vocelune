@@ -124,3 +124,10 @@ test('shared Merriam-Webster quota is reserved atomically and survives account d
   assert.equal((await db.dictionaryQuota.findUniqueOrThrow({ where: { provider_day: { provider, day } } })).used, 1000);
   await db.dictionaryQuota.update({ where: { provider_day: { provider, day } }, data: { used: previous?.used ?? 0 } });
 });
+
+test('translation endpoint returns Vietnamese translation and alternatives safely', async () => {
+  const res = await post('/dictionary/translate', alice, { text: 'resilient', from: 'en', to: 'vi' });
+  assert.equal(res.status, 201);
+  assert.ok(typeof res.body.translation === 'string' && res.body.translation.length > 0);
+  assert.ok(Array.isArray(res.body.alternatives));
+});

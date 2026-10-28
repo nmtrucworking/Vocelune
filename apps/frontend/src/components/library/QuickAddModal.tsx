@@ -5,7 +5,7 @@ import { X, Search, Sparkles, Volume2, Check, Info } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { PartOfSpeech, CEFRLevel, Dialect, VocabItem } from '@/types';
 import { api, post } from '@/lib/api';
-import { DictionaryLookup, DictionaryProvider, useDictionaryProviders } from '@/lib/dictionary';
+import { DictionaryLookup, DictionaryProvider, useDictionaryProviders, translateText } from '@/lib/dictionary';
 import { COMMON_WORD_KNOWLEDGE } from '@/lib/local-vocabulary-hints';
 import { DictionarySourceSelect } from '../dictionary/DictionarySourceSelect';
 import { DictionaryAttribution } from '../dictionary/DictionaryAttribution';
@@ -26,6 +26,9 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
   const [deckId, setDeckId] = useState(decks[0]?.id || '');
   const [tags, setTags] = useState('essential'), [notes, setNotes] = useState('');
   const [isSearching, setIsSearching] = useState(false), [saving, setSaving] = useState(false);
+  const [meaningAlternatives, setMeaningAlternatives] = useState<string[]>([]);
+  const [isTranslatingMeaning, setIsTranslatingMeaning] = useState(false);
+  const [isTranslatingExample, setIsTranslatingExample] = useState(false);
   const [result, setResult] = useState<DictionaryLookup | null>(null);
   const [selectedSenseId, setSelectedSenseId] = useState<string | null>(null);
   const [includeProviderContent, setIncludeProviderContent] = useState(false);
@@ -33,7 +36,19 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
   const [lookupNoticeType, setLookupNoticeType] = useState<'info' | 'warning'>('info');
   const request = useRef<{ sequence: number; controller?: AbortController }>({ sequence: 0 });
   useEffect(() => {
-    if (isOpen) { setSource(settings.dictionaryProvider || 'free_dictionary'); setAllowFallback(settings.dictionaryFallbackEnabled || false); setDialect(settings.englishDialect); setResult(null); setSelectedSenseId(null); setIncludeProviderContent(false); setLookupMessage(''); setIsSearching(false); }
+    if (isOpen) {
+      setSource(settings.dictionaryProvider || 'free_dictionary');
+      setAllowFallback(settings.dictionaryFallbackEnabled || false);
+      setDialect(settings.englishDialect);
+      setResult(null);
+      setSelectedSenseId(null);
+      setIncludeProviderContent(false);
+      setLookupMessage('');
+      setIsSearching(false);
+      setMeaningAlternatives([]);
+      setIsTranslatingMeaning(false);
+      setIsTranslatingExample(false);
+    }
     return () => { request.current.controller?.abort(); request.current.sequence++; };
   }, [isOpen, settings.dictionaryProvider, settings.dictionaryFallbackEnabled, settings.englishDialect]);
   const candidates = (result?.candidates || []).flatMap(candidate => candidate.senses.map(sense => ({
@@ -48,23 +63,71 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
   const invalidateLookup = () => {
     request.current.controller?.abort(); request.current.sequence++;
     setResult(null); setSelectedSenseId(null); setIncludeProviderContent(false); setLookupMessage(''); setIsSearching(false);
+    setMeaningAlternatives([]);
   };
   const handleLookup = async () => {
     if (!word.trim() || saving) return;
     request.current.controller?.abort();
     const controller = new AbortController(), sequence = ++request.current.sequence;
     request.current.controller = controller;
-    setIsSearching(true); setResult(null); setSelectedSenseId(null); setIncludeProviderContent(false); setLookupMessage('');
+    setIsSearching(true); setResult(null); setSelectedSenseId(null); setIncludeProviderContent(false); setLookupMessage(''); setMeaningAlternatives([]);
     try {
       const response = await api<DictionaryLookup>('/dictionary/lookup', { method: 'POST', body: JSON.stringify({ word: word.trim(), partOfSpeech: pos, dialect, provider: source, allowFallback: source !== 'free_dictionary' && allowFallback }), signal: controller.signal });
       if (sequence !== request.current.sequence || controller.signal.aborted) return;
       setResult(response); setLookupNoticeType(response.candidates.length ? 'info' : 'warning');
       setLookupMessage(response.warnings.join(' '));
-      // Require an explicit sense selection; spelling/POS can have several meanings.
+
+      // Auto-set Vietnamese meaning if available and meaningVi is empty
+      if (response.translationVi?.translation) {
+        if (!meaningVi.trim()) {
+          setMeaningVi(response.translationVi.translation);
+        }
+        setMeaningAlternatives(response.translationVi.alternatives || []);
+      } else if (known && !meaningVi.trim()) {
+        setMeaningVi(known.vi);
+      }
+      if (known && cefr === 'unknown') {
+        setCefr(known.cefr);
+      }
     } catch (error) {
       if (sequence !== request.current.sequence || controller.signal.aborted) return;
       setLookupNoticeType('warning'); setLookupMessage(error instanceof Error ? error.message : 'Không thể tra từ.');
+      if (known && !meaningVi.trim()) setMeaningVi(known.vi);
+      if (known && cefr === 'unknown') setCefr(known.cefr);
     } finally { if (sequence === request.current.sequence) setIsSearching(false); }
+  };
+  const handleTranslateMeaning = async (customText?: string) => {
+    const textToTranslate = customText || selected?.definition.value || word.trim();
+    if (!textToTranslate || isTranslatingMeaning) return;
+    setIsTranslatingMeaning(true);
+    try {
+      const res = await translateText(textToTranslate, 'en', 'vi');
+      if (res.translation) {
+        setMeaningVi(res.translation);
+        if (res.alternatives?.length) {
+          setMeaningAlternatives(res.alternatives);
+        }
+      }
+    } catch {
+      // translation fallback
+    } finally {
+      setIsTranslatingMeaning(false);
+    }
+  };
+  const handleTranslateExample = async () => {
+    const text = (fromProvider('exampleEn') ? providerValues.exampleEn : exampleEn).trim();
+    if (!text || isTranslatingExample) return;
+    setIsTranslatingExample(true);
+    try {
+      const res = await translateText(text, 'en', 'vi');
+      if (res.translation) {
+        setExampleVi(res.translation);
+      }
+    } catch {
+      // fallback
+    } finally {
+      setIsTranslatingExample(false);
+    }
   };
   const handleSelectSense = (sense: typeof candidates[number]) => { setSelectedSenseId(sense.id); setIncludeProviderContent(sense.persistFields.length > 0); };
   const handleSpeak = () => { if (word) speakWord(word, dialect); };
@@ -198,6 +261,22 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
                       <p className="text-text-secondary text-[11px] mt-0.5 line-clamp-2">
                         {sense.definition.value}
                       </p>
+
+                      {isSelected && sense.definition.value && (
+                        <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400">Đã chọn nghĩa này</span>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleTranslateMeaning(sense.definition.value || '');
+                            }}
+                            className="font-semibold text-brand-primary hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            <span>Dịch định nghĩa này sang tiếng Việt</span>
+                          </span>
+                        </div>
+                      )}
                     </button>
                   );
                 })}
@@ -277,9 +356,21 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
 
           {/* Meaning & Definition */}
           <div className="space-y-1.5">
-            <label htmlFor="quick-add-meaning" className="text-xs font-semibold text-brand-ink uppercase tracking-wide">
-              Nghĩa tiếng Việt <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label htmlFor="quick-add-meaning" className="text-xs font-semibold text-brand-ink uppercase tracking-wide">
+                Nghĩa tiếng Việt <span className="text-rose-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => handleTranslateMeaning()}
+                disabled={!word.trim() || isTranslatingMeaning}
+                className="text-[11px] font-semibold text-brand-primary hover:text-brand-primaryHover flex items-center gap-1 hover:underline disabled:opacity-40 transition-colors"
+                title="Tự động dịch từ tiếng Anh hoặc định nghĩa sang tiếng Việt"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>{isTranslatingMeaning ? 'Đang dịch...' : 'Dịch nghĩa tự động'}</span>
+              </button>
+            </div>
             <input
               type="text"
               required
@@ -289,6 +380,26 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
               onChange={(e) => setMeaningVi(e.target.value)}
               className="w-full px-3.5 py-2 text-sm bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary font-medium"
             />
+            {/* Quick Suggestions / Alternatives Chips */}
+            {meaningAlternatives.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                <span className="text-[10px] text-text-secondary">Gợi ý nghĩa:</span>
+                {meaningAlternatives.map((alt, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setMeaningVi(alt)}
+                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                      meaningVi === alt
+                        ? 'bg-brand-primary text-white border-brand-primary'
+                        : 'bg-slate-100 hover:bg-brand-canvas hover:text-brand-primary border-slate-200'
+                    }`}
+                  >
+                    {alt}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -319,7 +430,19 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-text-secondary">Dịch ví dụ tiếng Việt</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-text-secondary">Dịch ví dụ tiếng Việt</label>
+                {(fromProvider('exampleEn') ? providerValues.exampleEn : exampleEn).trim() && (
+                  <button
+                    type="button"
+                    onClick={handleTranslateExample}
+                    disabled={isTranslatingExample}
+                    className="text-[10px] font-semibold text-brand-primary hover:underline flex items-center gap-0.5"
+                  >
+                    <span>{isTranslatingExample ? 'Đang dịch...' : 'Dịch ví dụ'}</span>
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 placeholder="VD: Các doanh nghiệp địa phương đã chứng minh sự kiên cường..."

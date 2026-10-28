@@ -11,6 +11,12 @@ import { MerriamWebsterAdapter } from './dictionary/merriam-webster.adapter';
 import { OxfordAdapter } from './dictionary/oxford.adapter';
 import { DictionaryTransport } from './dictionary/transport';
 
+export const translateSchema = z.object({
+  text: z.string().trim().min(1).max(5000),
+  from: z.string().trim().default('en'),
+  to: z.string().trim().default('vi'),
+}).strict();
+
 export const saveDictionarySchema = lookupSchema.omit({ allowFallback: true }).extend({
   providerEntryRef: z.string().min(1).max(512), providerSenseRef: z.string().min(1).max(512),
   meaningVi: vocabSchema.shape.meaningVi, deckId: vocabSchema.shape.deckId,
@@ -47,6 +53,90 @@ export class DictionaryService {
     if (!result.candidates.length && !result.suggestions.length) result.warnings.push('Nguồn không có nghĩa phù hợp với từ loại đã chọn. Bạn có thể đổi từ loại hoặc nhập thủ công.');
     return { ...base, ...result };
   }
+  private translationCache = new Map<string, { translation: string; alternatives: string[]; source: string; timestamp: number }>();
+
+  async translateDirect(text: string, from = 'en', to = 'vi'): Promise<{ translation: string; alternatives: string[]; source: string }> {
+    const trimmed = text.trim();
+    if (!trimmed) return { translation: '', alternatives: [], source: 'none' };
+    const cacheKey = `${from}:${to}:${trimmed.toLowerCase()}`;
+    const cached = this.translationCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 3600000) {
+      return { translation: cached.translation, alternatives: cached.alternatives, source: cached.source };
+    }
+
+    // 1. Google Translate gtx
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&dt=bd&q=${encodeURIComponent(trimmed)}`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data = await res.json();
+        const translation = Array.isArray(data[0]) ? data[0].map((c: any) => c[0]).filter(Boolean).join('') : '';
+        let alternatives: string[] = [];
+        if (Array.isArray(data[1])) {
+          for (const item of data[1]) {
+            if (Array.isArray(item[1])) {
+              alternatives.push(...item[1].slice(0, 5));
+            }
+          }
+        }
+        alternatives = Array.from(new Set(alternatives)).filter(a => a.toLowerCase() !== translation.toLowerCase());
+        if (translation) {
+          const result = { translation, alternatives: alternatives.slice(0, 6), source: 'google' };
+          this.translationCache.set(cacheKey, { ...result, timestamp: Date.now() });
+          return result;
+        }
+      }
+    } catch {
+      // fallback
+    }
+
+    // 2. MyMemory fallback
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(trimmed)}&langpair=${from}|${to}`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data = await res.json();
+        const translation = data.responseData?.translatedText || '';
+        const matches = Array.isArray(data.matches)
+          ? data.matches.map((m: any) => m.translation).filter((t: string) => t && t.toLowerCase() !== translation.toLowerCase())
+          : [];
+        const alternatives = Array.from(new Set(matches)).slice(0, 5) as string[];
+        if (translation) {
+          const result = { translation, alternatives, source: 'mymemory' };
+          this.translationCache.set(cacheKey, { ...result, timestamp: Date.now() });
+          return result;
+        }
+      }
+    } catch {
+      // both failed
+    }
+
+    return { translation: '', alternatives: [], source: 'none' };
+  }
+
+  private async enrichTranslation(result: LookupResult, word: string): Promise<LookupResult> {
+    try {
+      const trans = await this.translateDirect(word, 'en', 'vi');
+      if (trans.translation) {
+        return { ...result, translationVi: trans };
+      }
+    } catch {
+      // best-effort
+    }
+    return result;
+  }
+
+  async translate(userId: string, body: unknown) {
+    const input = translateSchema.parse(body);
+    return this.translateDirect(input.text, input.from, input.to);
+  }
+
   async lookup(userId: string, body: unknown): Promise<LookupResult> {
     const input = lookupSchema.parse(body);
     const settings = await this.db.userSettings.findUniqueOrThrow({ where: { userId } });
@@ -56,7 +146,7 @@ export class DictionaryService {
     let result: LookupResult | undefined;
     try {
       result = await this.fromProvider(userId, provider, input);
-      if (result.candidates.length || !allowFallback || provider === 'free_dictionary') return result;
+      if (result.candidates.length || !allowFallback || provider === 'free_dictionary') return this.enrichTranslation(result, input.word);
     } catch (error) {
       if (!allowFallback || provider === 'free_dictionary') throw error;
       // Validation, DB failures and implementation errors must not be disguised as provider fallback.
@@ -65,9 +155,9 @@ export class DictionaryService {
     }
     try {
       const fallback = await this.fromProvider(userId, 'free_dictionary', input);
-      return { ...fallback, requestedProvider: provider, fallbackUsed: true, warnings: [`Nguồn ${this.adapters[provider].status().name} chưa trả được nghĩa phù hợp. Đã dùng Free Dictionary API theo tùy chọn dự phòng của bạn.`, ...fallback.warnings] };
+      return this.enrichTranslation({ ...fallback, requestedProvider: provider, fallbackUsed: true, warnings: [`Nguồn ${this.adapters[provider].status().name} chưa trả được nghĩa phù hợp. Đã dùng Free Dictionary API theo tùy chọn dự phòng của bạn.`, ...fallback.warnings] }, input.word);
     } catch (fallbackError) {
-      if (result) return { ...result, warnings: [...result.warnings, 'Nguồn dự phòng cũng chưa khả dụng. Bạn vẫn có thể nhập thủ công.'] };
+      if (result) return this.enrichTranslation({ ...result, warnings: [...result.warnings, 'Nguồn dự phòng cũng chưa khả dụng. Bạn vẫn có thể nhập thủ công.'] }, input.word);
       throw failure ?? fallbackError;
     }
   }

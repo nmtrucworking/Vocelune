@@ -19,7 +19,18 @@ export type DictionaryLookup = {
   fallbackUsed: boolean; configured: boolean; persistenceSupported: boolean;
   attribution: DictionaryAttribution; warnings: string[]; suggestions: string[];
   candidates: { lemma: string; partOfSpeech: PartOfSpeech; providerEntryRef: string; senses: DictionarySense[] }[];
+  translationVi?: { translation: string; alternatives: string[]; source?: string };
 };
+export async function translateText(text: string, from = 'en', to = 'vi'): Promise<{ translation: string; alternatives: string[] }> {
+  try {
+    return await api<{ translation: string; alternatives: string[] }>('/dictionary/translate', {
+      method: 'POST',
+      body: JSON.stringify({ text, from, to }),
+    });
+  } catch {
+    return { translation: '', alternatives: [] };
+  }
+}
 export const DICTIONARY_SOURCES: { id: DictionaryProvider; name: string; tier: 'free' | 'api_key' }[] = [
   { id: 'free_dictionary', name: 'Free Dictionary API', tier: 'free' },
   { id: 'merriam_webster', name: 'Merriam-Webster', tier: 'api_key' },

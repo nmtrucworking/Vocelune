@@ -1,0 +1,67 @@
+services:
+  - type: web
+    name: vocelune-api
+    runtime: node
+    plan: starter
+    region: singapore
+    buildCommand: npm ci && npm run db:generate && npm run build:backend
+    preDeployCommand: npm run db:migrate
+    startCommand: npm run start:backend:prod
+    healthCheckPath: /api/v1/health/live
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_ORIGIN
+        sync: false
+      - key: SESSION_DAYS
+        value: "30"
+      - key: EMAIL_ENCRYPTION_KEY
+        generateValue: true
+      - key: DICTIONARY_LICENSE_MODE
+        value: LIVE_ONLY
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: vocelune-redis
+          property: connectionString
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: MERRIAM_WEBSTER_DAILY_LIMIT
+        value: "1000"
+      - key: OXFORD_ENVIRONMENT
+        value: production
+
+  - type: web
+    name: vocelune-frontend
+    runtime: node
+    plan: starter
+    region: singapore
+    buildCommand: npm ci && npm run build:frontend
+    startCommand: npm run start --workspace=@vocelune/frontend
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: API_PROXY_TARGET
+        fromService:
+          type: web
+          name: vocelune-api
+          property: host
+
+  - type: redis
+    name: vocelune-redis
+    plan: free
+    region: singapore
+    ipAllowList: []

@@ -18,4 +18,4 @@ COPY --from=build /app/package.json ./package.json
 USER node
 WORKDIR /app/apps/backend
 EXPOSE 4000
-CMD ["node", "dist/main.js"]
+CMD ["npm", "run", "start:prod"]

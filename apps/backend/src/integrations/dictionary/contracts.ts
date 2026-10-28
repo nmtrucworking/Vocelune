@@ -61,6 +61,11 @@ export type LookupResult = AdapterResult & {
   attribution: Attribution;
   fallbackUsed: boolean;
   persistenceSupported: boolean;
+  translationVi?: {
+    translation: string;
+    alternatives: string[];
+    source?: string;
+  };
 };
 export const cefrUnknown = { status: 'not_verified', value: null, source: null } as const;
 export const permittedFields = (value: string): PersistField[] => [...new Set(value.split(',').map(v => v.trim()).filter((v): v is PersistField => ['definitionEn', 'exampleEn', 'phonetic'].includes(v)))];

@@ -5,6 +5,7 @@ import { X, Volume2, Trash2, Check, Sparkles } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, PartOfSpeech, CEFRLevel } from '@/types';
 import { speakWord } from '@/lib/speech';
+import { translateText } from '@/lib/dictionary';
 import { DictionaryAttribution } from '../dictionary/DictionaryAttribution';
 import { AudioButton } from '../common/AudioButton';
 
@@ -27,6 +28,21 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
   const [cefr, setCefr] = useState<CEFRLevel>(vocab?.cefr || 'B2');
   const [pos, setPos] = useState<PartOfSpeech>(vocab?.partOfSpeech || 'noun');
   const [notes, setNotes] = useState(vocab?.notes || '');
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  const handleAutoTranslate = async () => {
+    const textToTranslate = definitionEn.trim() || word.trim();
+    if (!textToTranslate || isTranslating) return;
+    setIsTranslating(true);
+    try {
+      const res = await translateText(textToTranslate, 'en', 'vi');
+      if (res.translation) {
+        setMeaningVi(res.translation);
+      }
+    } finally {
+      setIsTranslating(false);
+    }
+  };
 
   // Reset local state when opened with a new vocab item
   React.useEffect(() => {
@@ -137,7 +153,19 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-text-secondary">Nghĩa tiếng Việt</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-text-secondary">Nghĩa tiếng Việt</label>
+                <button
+                  type="button"
+                  onClick={handleAutoTranslate}
+                  disabled={isTranslating || !word.trim()}
+                  className="text-[11px] font-semibold text-brand-primary hover:underline flex items-center gap-1 disabled:opacity-40"
+                  title="Tự động dịch sang tiếng Việt"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>{isTranslating ? 'Đang dịch...' : 'Dịch tự động'}</span>
+                </button>
+              </div>
               <input
                 type="text"
                 value={meaningVi}
