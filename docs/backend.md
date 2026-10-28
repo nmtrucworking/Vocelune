@@ -67,16 +67,37 @@ Swagger có schemas cho các mutations chính tại `/api/docs`; JSON tại `/ap
 
 `POST /auth/password/forgot` nhận `{email}` và luôn trả thông báo chung khi dịch vụ email đã cấu hình; `POST /auth/password/reset` nhận `{token,password}`. Khóa `EMAIL_ENCRYPTION_KEY` phải là 32 bytes dạng 64 ký tự hex và được giữ ổn định giữa API/worker.
 
-### Vocabulary và decks
+### Vocabulary, decks, topic groups và public sharing
 
-- `GET /vocabulary?search=&deckId=&cefr=&partOfSpeech=&tag=&limit=50&cursor=` trả `{items,nextCursor,total}`.
+- `GET /vocabulary?search=&deckId=&topicGroup=&cefr=&partOfSpeech=&tag=&limit=50&cursor=` trả `{items,nextCursor,total}`. Hỗ trợ lọc đồng thời theo bộ từ và nhóm chủ đề (`topicGroup`).
 - `POST /vocabulary` nhận `word`, `partOfSpeech`, `meaningVi`, `deckId`; tùy chọn definitionEn, exampleEn/Vi, phonetic, dialect, cefr, tags, notes, templates và deckIds.
 - CEFR tự nhập là manual/unknown. IPA trống được giữ trống. Không nhận claim `verified_3000` từ browser.
 - `GET/PATCH/DELETE /vocabulary/:id`; PATCH chỉ thay các trường được gửi.
 - `POST /vocabulary/:id/cards` nhận `{template}`: en_vi, vi_en, audio_word, definition_en. Template định nghĩa cần definitionEn.
-- `GET/POST /decks`, `PATCH/DELETE /decks/:id`. Không xóa bộ cuối cùng; từ không còn bộ nào được chuyển vào bộ còn lại.
+- `GET/POST /decks`, `PATCH/DELETE /decks/:id`: Hỗ trợ `name`, `description`, `color`, `icon`, `topicGroup` (mặc định `'Chung'`) và `isPublic` (boolean). Không xóa bộ cuối cùng; từ không còn bộ nào được chuyển vào bộ còn lại.
+- `GET /decks/groups`: Thống kê số lượng bộ từ theo từng nhóm chủ đề của tài khoản, kèm các danh mục gợi ý phổ biến (`IELTS / Academic`, `Giao tiếp hàng ngày`, `Công sở / Business`, `Du lịch & Đời sống`, `Công nghệ / Kỹ thuật`, `Ngữ pháp & Cấu trúc`).
+- `GET /decks/public?topicGroup=&search=`: Khám phá kho chủ đề công khai chia sẻ từ cộng đồng; hỗ trợ lọc theo nhóm và tìm kiếm full-text; kết quả được cache bộ nhớ 30s để tối ưu hiệu năng và chi phí DB.
+- `GET /decks/public/:id`: Xem trước metadata bộ từ công khai, phân bố cấp độ CEFR và danh sách từ vựng mẫu (kèm phát âm & nghĩa). Trả về 404 đối với bộ từ riêng tư (`isPublic: false`).
+- `POST /decks/public/:id/fork`: Lưu bộ từ công khai về tài khoản cá nhân (1-click clone). Transaction tạo mới bộ từ, upsert lexemes, tạo VocabItems và thẻ FSRS gắn với scheduler cá nhân, đồng thời tăng biến đếm `forkCount` của bộ gốc.
 - `POST /vocabulary/duplicate-preview` nhận `{word,partOfSpeech}`. Trùng được xác định thêm theo nghĩa, không chỉ spelling.
 - `POST /vocabulary/merge` nhận `{sourceId,targetId}`; cùng lexeme/POS, có audit. Thẻ trùng template được archive, log vẫn gắn với card cũ.
+
+### Chiến lược tối ưu chi phí vận hành và hiệu năng (Cost-Efficiency & Performance)
+
+1. **Zero LLM / Token Overhead**:
+   - Quá trình gom nhóm chủ đề, chia sẻ cộng đồng và phân nhánh (fork) bộ từ hoạt động 100% bằng logic cơ sở dữ liệu quan hệ và in-memory processing.
+   - Không thực hiện bất kỳ lệnh gọi API tốn phí nào (như OpenAI, Anthropic hay dịch vụ AI bên ngoài) cho các tác vụ tổ chức từ vựng và cộng đồng.
+2. **In-Memory Cache cho Public Feeds**:
+   - Endpoint `GET /decks/public` lưu cache 30 giây trong bộ nhớ node server; tự động giải phóng (invalidation) ngay khi phát sinh mutation (tạo, cập nhật, xóa, hoặc fork).
+   - Ngăn ngừa hiện tượng traffic spike đè nặng lên PostgreSQL khi có nhiều học viên duyệt kho chủ đề cộng đồng cùng lúc.
+3. **Chỉ mục tối ưu (Index Coverage)**:
+   - Composite Index `("isPublic", "deletedAt")` phục vụ lọc tức thời cho bảng feed cộng đồng mà không quét toàn bảng (Full Table Scan).
+   - Index `("userId", "topicGroup")` hỗ trợ gom nhóm chủ đề tức thời cho thư viện cá nhân và màn hình học tập.
+4. **Lazy Preview & Nhẹ băng thông**:
+   - Feed cộng đồng chỉ truyền các trường tóm tắt (`authorName`, `itemCount`, `forkCount`, `topicGroup`, `color`, `icon`).
+   - Dữ liệu chi tiết từ vựng chỉ được nạp theo yêu cầu khi người dùng chủ động bấm "Xem trước" (`/decks/public/:id`), giúp tải trang tức thì và tiết kiệm băng thông mạng.
+5. **Batch Transaction trong Fork**:
+   - Luồng fork thực hiện batching qua `forUser` transaction, upsert lexeme và liên kết `DeckItem` hiệu quả, tránh N+1 network roundtrips.
 
 ### Study / FSRS
 

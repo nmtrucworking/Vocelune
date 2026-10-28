@@ -16,6 +16,7 @@ interface VoceluneContextType {
   addVocabItem: (item: Omit<VocabItem, 'id' | 'createdAt' | 'updatedAt'>) => Promise<VocabItem>;
   updateVocabItem: (id: string, updates: Partial<VocabItem>) => Promise<void>; deleteVocabItem: (id: string) => Promise<void>;
   addDeck: (deck: Omit<Deck, 'id' | 'createdAt'>) => Promise<Deck>; updateDeck: (id: string, updates: Partial<Deck>) => Promise<void>; deleteDeck: (id: string) => Promise<void>;
+  forkPublicDeck: (deckId: string, options?: { targetName?: string; topicGroup?: string }) => Promise<{ deck: Deck; importedCount: number }>;
   revealCard: (cardId: string) => Promise<void>; gradeCard: (cardId: string, rating: FSRSRating, durationMs?: number) => Promise<void>;
   undoLastReview: () => Promise<boolean>; toggleSuspendCard: (cardId: string) => Promise<void>;
   updateSettings: (updates: Partial<UserSettings>) => Promise<void>;
@@ -63,6 +64,9 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
   const addDeck = useCallback((deck: Omit<Deck, 'id' | 'createdAt'>) => perform(() => post<Deck>('/decks', deck)), [perform]);
   const updateDeck = useCallback(async (id: string, updates: Partial<Deck>) => { await perform(() => api(`/decks/${id}`, { method: 'PATCH', body: JSON.stringify(updates) })); }, [perform]);
   const deleteDeck = useCallback(async (id: string) => { await perform(() => api(`/decks/${id}`, { method: 'DELETE' })); }, [perform]);
+  const forkPublicDeck = useCallback(async (deckId: string, options?: { targetName?: string; topicGroup?: string }) => {
+    return perform(async () => post<{ deck: Deck; importedCount: number }>(`/decks/public/${deckId}/fork`, options ?? {}));
+  }, [perform]);
   const revealCard = useCallback(async (cardId: string) => {
     if (!session.current) session.current = post<{ id: string }>('/study/sessions', { mode: 'flashcard' }).catch(e => { session.current = null; throw e; });
     const activeSession = await session.current;
@@ -103,7 +107,7 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
   const overview = snapshot?.overview;
   return <VoceluneContext.Provider value={{ analytics: overview ?? null, user: snapshot?.user ?? null, error, clearError: () => setError(null), refresh, login, logout,
     vocabItems: snapshot?.vocabItems ?? [], decks: snapshot?.decks ?? [], cards, reviewLogs: snapshot?.reviewLogs ?? [], testAttempts: snapshot?.testAttempts ?? [], settings: snapshot?.settings ?? INITIAL_SETTINGS, isLoaded, canUndo: !!lastReview,
-    addVocabItem, updateVocabItem, deleteVocabItem, addDeck, updateDeck, deleteDeck, revealCard, gradeCard, undoLastReview, toggleSuspendCard, updateSettings,
+    addVocabItem, updateVocabItem, deleteVocabItem, addDeck, updateDeck, deleteDeck, forkPublicDeck, revealCard, gradeCard, undoLastReview, toggleSuspendCard, updateSettings,
     dueCards: snapshot?.dueCards ?? [], ...computed, streak: overview?.streak ?? 0, observedRetention: overview?.observedRetention ?? null, retentionSampleSize: overview?.sampleSize ?? 0,
     weakWords: overview?.weakWords ?? [], todayReviewsCount: overview?.todayReviewsCount ?? 0, activityHeatmap: overview?.activityHeatmap.slice(-42) ?? [],
   }}>{children}</VoceluneContext.Provider>;

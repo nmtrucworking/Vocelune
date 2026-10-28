@@ -26,8 +26,33 @@ import { triggerConfetti } from '@/lib/confetti';
 import { AudioButton } from '../common/AudioButton';
 
 export function StudyConsole() {
-  const { dueCards, vocabItems, gradeCard, undoLastReview, canUndo, settings, revealCard, cards } =
+  const { dueCards, vocabItems, decks, gradeCard, undoLastReview, canUndo, settings, revealCard, cards } =
     useVocelune();
+
+  const [selectedTopicGroup, setSelectedTopicGroup] = useState<string>('all');
+  const [selectedDeckId, setSelectedDeckId] = useState<string>('all');
+
+  const availableGroups = useMemo(() => {
+    const set = new Set<string>();
+    decks.forEach((d) => set.add(d.topicGroup || 'Chung'));
+    return Array.from(set).sort();
+  }, [decks]);
+
+  const deckMap = useMemo(() => new Map(decks.map((d) => [d.id, d])), [decks]);
+
+  const candidateCards = useMemo(() => {
+    const base = dueCards.length > 0 ? dueCards : cards;
+    return base.filter((card) => {
+      const vocab = vocabItems.find((v) => v.id === card.vocabItemId);
+      if (!vocab) return false;
+      if (selectedDeckId !== 'all' && vocab.deckId !== selectedDeckId) return false;
+      if (selectedTopicGroup !== 'all') {
+        const d = deckMap.get(vocab.deckId);
+        if ((d?.topicGroup || 'Chung') !== selectedTopicGroup) return false;
+      }
+      return true;
+    });
+  }, [dueCards, cards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
 
   const grading = useRef(false);
   const [revealReady, setRevealReady] = useState(false);
@@ -51,12 +76,12 @@ export function StudyConsole() {
   const [completedCount, setCompletedCount] = useState(0);
   const [startTime, setStartTime] = useState<number>(Date.now());
 
-  // Initialize queue
+  // Initialize queue based on candidateCards
   useEffect(() => {
-    if (queue.length === 0 && dueCards.length > 0) {
-      setQueue([...dueCards]);
-    }
-  }, [dueCards, queue.length]);
+    setQueue(candidateCards);
+    setCurrentIndex(0);
+    setIsFlipped(false);
+  }, [candidateCards]);
 
   const currentCard = queue[currentIndex] || null;
   const currentVocab: VocabItem | undefined = useMemo(() => {
@@ -262,16 +287,38 @@ export function StudyConsole() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Top Header: Progress & Mode Switcher */}
-      <div className="flex items-center justify-between px-1 text-xs">
-        <div className="flex items-center gap-2 font-medium text-text-secondary">
-          <span className="font-bold text-brand-ink">
-            Thẻ {currentIndex + 1}
-          </span>
-          <span>/</span>
-          <span>{queue.length}</span>
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-brand-primarySoft text-brand-primary">
-            {currentCard.state}
-          </span>
+      {/* Header controls: Topic selection & Mode selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 text-xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 font-medium text-text-secondary">
+            <span className="font-bold text-brand-ink">
+              Thẻ {currentIndex + 1}
+            </span>
+            <span>/</span>
+            <span>{queue.length}</span>
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-brand-primarySoft text-brand-primary">
+              {currentCard.state}
+            </span>
+          </div>
+
+          {/* Quick topic group selector */}
+          <div className="flex items-center gap-1 pl-2 border-l border-slate-200">
+            <select
+              value={selectedTopicGroup}
+              onChange={(e) => {
+                setSelectedTopicGroup(e.target.value);
+                setSelectedDeckId('all');
+              }}
+              className="px-2 py-1 text-[11px] bg-surface-base border border-slate-200 rounded-md font-medium text-slate-700 focus:outline-none focus:border-brand-primary"
+            >
+              <option value="all">Tất cả nhóm</option>
+              {availableGroups.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Study Mode Selector */}

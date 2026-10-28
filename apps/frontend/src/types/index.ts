@@ -58,7 +58,17 @@ export interface Deck {
   description: string;
   color?: string;
   icon?: string;
+  topicGroup?: string;
+  isPublic?: boolean;
+  forkCount?: number;
+  itemCount?: number;
+  authorName?: string;
   createdAt: string;
+}
+
+export interface PublicDeckPreview extends Deck {
+  cefrStats: Record<string, number>;
+  sampleWords: Partial<VocabItem>[];
 }
 
 export interface Card {

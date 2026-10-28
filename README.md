@@ -38,6 +38,7 @@ Tests tạo database PostgreSQL có tên ngẫu nhiên, áp dụng toàn bộ mi
 - NestJS modular monolith, Prisma, PostgreSQL: migrations, indexes, constraints, kiểm tra tenant bằng service và DB triggers.
 - Đăng ký/đăng nhập, opaque session HttpOnly, CSRF, giới hạn request, đổi mật khẩu qua email, thu hồi phiên, xuất/xóa tài khoản.
 - CRUD bộ từ và nghĩa từ, nhiều chiều thẻ, tìm kiếm/phân trang, tags, kiểm tra/hợp nhất trùng và soft delete giữ lịch sử.
+- **Quản lý nhóm chủ đề (Topic Groups) & Kho cộng đồng (Public Decks)**: Gom nhóm bộ từ theo chuyên đề (IELTS, Giao tiếp, Công sở, v.v.), chia sẻ công khai lên cộng đồng, xem trước và 1-click clone bộ từ kèm tự động khởi tạo lịch ôn FSRS. Tối ưu hiệu năng cao và 0 chi phí token AI thông qua in-memory caching và indexed queries.
 - Due queue, giới hạn thẻ mới theo ngày học, reveal, FSRS server-side, transaction chống ghi lặp/xung đột, undo 30 giây, suspend/reset, cấu hình scheduler có phiên bản.
 - Bài kiểm tra: bộ lọc, snapshot, trắc nghiệm/nhập đáp án/nghe, autosave, resume, timeout, chấm trên server. Ghi SRS cần tự đánh giá rõ ràng từng câu.
 - CSV/XLSX: mẫu, upload, preview từng dòng, import có checkpoint/retry; export CSV/XLSX/JSON. Worker BullMQ xử lý import và email bằng trạng thái bền vững trong PostgreSQL.

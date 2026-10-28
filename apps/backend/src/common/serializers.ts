@@ -3,9 +3,17 @@ export function vocabDto(v: VocabItem & { decks: DeckItem[] }) {
   const { userId, lexemeId, deletedAt, senseKey, sourceKind, provenance, decks, ...fields } = v;
   return { ...fields, deckId: decks[0]?.deckId || '', deckIds: decks.map(d => d.deckId), senseKey, sourceKind, provenance };
 }
-export function deckDto(d: Deck) {
-  const { userId, normalizedName, deletedAt, ...fields } = d;
-  return fields;
+export function deckDto(d: Deck & { _count?: { items: number } }) {
+  const { userId, normalizedName, deletedAt, _count, ...fields } = d;
+  return { ...fields, ...(typeof _count?.items === 'number' ? { itemCount: _count.items } : {}) };
+}
+export function publicDeckDto(d: Deck & { user?: { displayName: string }; _count?: { items: number } }) {
+  const { userId, normalizedName, deletedAt, _count, user, ...fields } = d;
+  return {
+    ...fields,
+    authorName: user?.displayName || 'Cộng đồng',
+    itemCount: _count?.items ?? 0,
+  };
 }
 export function cardDto(c: Card) {
   const { userId, deletedAt, ...fields } = c;

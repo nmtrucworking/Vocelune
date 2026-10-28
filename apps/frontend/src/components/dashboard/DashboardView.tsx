@@ -14,6 +14,7 @@ import {
   Plus,
   Play,
   Calendar,
+  Globe,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { speakWord } from '@/lib/speech';
@@ -285,6 +286,38 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
             >
               Mở toàn bộ thư viện &rarr;
             </Link>
+          </div>
+
+          {/* Topic Groups & Community Quick Card */}
+          <div className="bg-gradient-to-br from-brand-canvas/60 to-white border border-slate-200/80 rounded-card p-4 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-emerald-600" />
+                <h4 className="font-bold text-xs text-brand-ink">Chủ đề & Cộng đồng</h4>
+              </div>
+              <Link
+                href="/app/library"
+                className="text-[10px] text-emerald-700 font-bold bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 transition-colors"
+              >
+                Khám phá
+              </Link>
+            </div>
+            <p className="text-[11px] text-text-secondary leading-relaxed">
+              Tổ chức từ vựng theo nhóm và lưu các bộ từ công khai từ cộng đồng với 1 chạm.
+            </p>
+            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+              {Array.from(new Set(decks.map((d) => d.topicGroup || 'Chung')))
+                .slice(0, 4)
+                .map((group) => (
+                  <Link
+                    key={group}
+                    href="/app/library"
+                    className="px-2 py-1 rounded bg-white border border-slate-200 text-[10px] font-medium text-slate-700 hover:border-brand-primary hover:text-brand-primary transition-colors"
+                  >
+                    {group}
+                  </Link>
+                ))}
+            </div>
           </div>
         </div>
       </div>

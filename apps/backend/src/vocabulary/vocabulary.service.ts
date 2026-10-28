@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { Database, json, Tx } from '../common/db';
 import { fail, normalized, pagination, uuid } from '../common/http';
-import { cardDto, deckDto, vocabDto } from '../common/serializers';
+import { cardDto, deckDto, publicDeckDto, vocabDto } from '../common/serializers';
 import { hash } from '../identity/security';
 
 export const pos = z.enum(['noun', 'verb', 'adjective', 'adverb', 'phrase', 'idiom', 'preposition', 'conjunction', 'other']);
@@ -20,8 +20,22 @@ export const vocabSchema = z.object({
   sourceKind: z.literal('user').default('user'),
 }).strict();
 export type VocabInput = z.infer<typeof vocabSchema>;
-export const deckSchema = z.object({ name: z.string().trim().min(1).max(100), description: z.string().max(2000).default(''), color: z.string().regex(/^#[a-fA-F0-9]{6}$/).default('#4F46E5'), icon: z.string().max(30).default('book') }).strict();
-export const vocabularyQuery = pagination.extend({ search: z.string().max(100).optional(), deckId: uuid.optional(), cefr: cefr.optional(), partOfSpeech: pos.optional(), tag: z.string().max(50).optional() });
+export const deckSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  description: z.string().max(2000).default(''),
+  color: z.string().regex(/^#[a-fA-F0-9]{6}$/).default('#4F46E5'),
+  icon: z.string().max(30).default('book'),
+  topicGroup: z.string().trim().min(1).max(60).default('Chung'),
+  isPublic: z.boolean().default(false),
+}).strict();
+export const vocabularyQuery = pagination.extend({
+  search: z.string().max(100).optional(),
+  deckId: uuid.optional(),
+  topicGroup: z.string().max(60).optional(),
+  cefr: cefr.optional(),
+  partOfSpeech: pos.optional(),
+  tag: z.string().max(50).optional(),
+});
 
 @Injectable()
 export class VocabularyService {
@@ -62,6 +76,7 @@ export class VocabularyService {
     const where: Prisma.VocabItemWhereInput = { userId, deletedAt: null,
       ...(q.search ? { OR: [{ word: { contains: q.search, mode: 'insensitive' } }, { meaningVi: { contains: q.search, mode: 'insensitive' } }] } : {}),
       ...(q.deckId ? { decks: { some: { deckId: q.deckId, deck: { userId, deletedAt: null } } } } : {}),
+      ...(q.topicGroup && q.topicGroup !== 'all' ? { decks: { some: { deck: { userId, topicGroup: q.topicGroup, deletedAt: null } } } } : {}),
       ...(q.cefr ? { cefr: q.cefr } : {}), ...(q.partOfSpeech ? { partOfSpeech: q.partOfSpeech } : {}), ...(q.tag ? { tags: { has: q.tag } } : {}),
     };
     const items = await this.db.vocabItem.findMany({ where, include: { decks: true }, orderBy: { id: 'asc' }, take: q.limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) });
@@ -102,19 +117,56 @@ export class VocabularyService {
       return { ok: true };
     });
   }
-  async decks(userId: string) { return (await this.db.deck.findMany({ where: { userId, deletedAt: null }, orderBy: { createdAt: 'asc' } })).map(deckDto); }
+  private publicDecksCache: { timestamp: number; key: string; data: unknown } | null = null;
+  invalidatePublicCache() { this.publicDecksCache = null; }
+
+  async decks(userId: string) {
+    return (await this.db.deck.findMany({
+      where: { userId, deletedAt: null },
+      include: { _count: { select: { items: true } } },
+      orderBy: [{ topicGroup: 'asc' }, { createdAt: 'asc' }],
+    })).map(deckDto);
+  }
+
+  async topicGroups(userId: string) {
+    const decks = await this.db.deck.findMany({ where: { userId, deletedAt: null }, select: { topicGroup: true } });
+    const counts = new Map<string, number>();
+    for (const d of decks) {
+      const g = d.topicGroup || 'Chung';
+      counts.set(g, (counts.get(g) ?? 0) + 1);
+    }
+    const defaults = ['Chung', 'IELTS / Academic', 'Giao tiếp hàng ngày', 'Công sở / Business', 'Du lịch & Đời sống', 'Công nghệ / Kỹ thuật', 'Ngữ pháp & Cấu trúc'];
+    for (const def of defaults) {
+      if (!counts.has(def)) counts.set(def, 0);
+    }
+    return Array.from(counts.entries()).map(([name, count]) => ({ name, count }));
+  }
+
   async createDeck(userId: string, body: unknown) {
     const data = deckSchema.parse(body);
-    return deckDto(await this.db.deck.create({ data: { ...data, userId, normalizedName: normalized(data.name) } }));
+    const created = await this.db.deck.create({
+      data: { ...data, userId, normalizedName: normalized(data.name) },
+      include: { _count: { select: { items: true } } },
+    });
+    this.invalidatePublicCache();
+    return deckDto(created);
   }
+
   async updateDeck(userId: string, deckId: string, body: unknown) {
     const parsed = deckSchema.partial().parse(body);
     const data = Object.fromEntries(Object.entries(parsed).filter(([key]) => Object.hasOwn(body as object, key))) as typeof parsed;
     return this.db.forUser(userId, async tx => {
       await this.requireDeck(tx, userId, deckId);
-      return deckDto(await tx.deck.update({ where: { id: deckId }, data: { ...data, ...(data.name ? { normalizedName: normalized(data.name) } : {}) } }));
+      const updated = await tx.deck.update({
+        where: { id: deckId },
+        data: { ...data, ...(data.name ? { normalizedName: normalized(data.name) } : {}) },
+        include: { _count: { select: { items: true } } },
+      });
+      this.invalidatePublicCache();
+      return deckDto(updated);
     });
   }
+
   async deleteDeck(userId: string, deckId: string) {
     return this.db.forUser(userId, async tx => {
       await this.requireDeck(tx, userId, deckId);
@@ -124,7 +176,205 @@ export class VocabularyService {
       await tx.deckItem.createMany({ data: orphaned.map(v => ({ deckId: others[0].id, vocabItemId: v.id })), skipDuplicates: true });
       await tx.deckItem.deleteMany({ where: { deckId } });
       await tx.deck.update({ where: { id: deckId }, data: { deletedAt: new Date() } });
+      this.invalidatePublicCache();
       return { ok: true };
+    });
+  }
+
+  async publicDecks(query: unknown) {
+    const q = z.object({
+      topicGroup: z.string().max(60).optional(),
+      search: z.string().max(100).optional(),
+    }).parse(query ?? {});
+
+    const cacheKey = JSON.stringify(q);
+    const now = Date.now();
+    // 30s TTL in-memory cache to guarantee zero DB strain on public explore
+    if (this.publicDecksCache && this.publicDecksCache.key === cacheKey && now - this.publicDecksCache.timestamp < 30000) {
+      return this.publicDecksCache.data;
+    }
+
+    const where: Prisma.DeckWhereInput = {
+      isPublic: true,
+      deletedAt: null,
+      ...(q.topicGroup && q.topicGroup !== 'all' ? { topicGroup: q.topicGroup } : {}),
+      ...(q.search?.trim() ? {
+        OR: [
+          { name: { contains: q.search.trim(), mode: 'insensitive' } },
+          { description: { contains: q.search.trim(), mode: 'insensitive' } },
+          { topicGroup: { contains: q.search.trim(), mode: 'insensitive' } },
+        ],
+      } : {}),
+    };
+
+    const decks = await this.db.deck.findMany({
+      where,
+      include: {
+        user: { select: { displayName: true } },
+        _count: { select: { items: true } },
+      },
+      orderBy: [{ forkCount: 'desc' }, { createdAt: 'desc' }],
+      take: 60,
+    });
+
+    const result = {
+      items: decks.map(publicDeckDto),
+      total: decks.length,
+    };
+    this.publicDecksCache = { timestamp: now, key: cacheKey, data: result };
+    return result;
+  }
+
+  async publicDeckPreview(deckId: string) {
+    const deck = await this.db.deck.findFirst({
+      where: { id: deckId, isPublic: true, deletedAt: null },
+      include: {
+        user: { select: { displayName: true } },
+        _count: { select: { items: true } },
+        items: {
+          take: 40,
+          include: {
+            vocabItem: {
+              select: {
+                id: true,
+                word: true,
+                phonetic: true,
+                partOfSpeech: true,
+                meaningVi: true,
+                definitionEn: true,
+                exampleEn: true,
+                cefr: true,
+                dialect: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!deck) fail(404, 'NOT_FOUND', 'Không tìm thấy bộ từ công khai.');
+
+    const cefrStats: Record<string, number> = {};
+    for (const it of deck.items) {
+      const lvl = it.vocabItem.cefr || 'unknown';
+      cefrStats[lvl] = (cefrStats[lvl] ?? 0) + 1;
+    }
+
+    return {
+      ...publicDeckDto(deck),
+      cefrStats,
+      sampleWords: deck.items.map(it => it.vocabItem),
+    };
+  }
+
+  async forkDeck(userId: string, deckId: string, body: unknown) {
+    const { targetName, topicGroup } = z.object({
+      targetName: z.string().trim().min(1).max(100).optional(),
+      topicGroup: z.string().trim().min(1).max(60).optional(),
+    }).strict().parse(body ?? {});
+
+    const sourceDeck = await this.db.deck.findFirst({
+      where: { id: deckId, isPublic: true, deletedAt: null },
+      include: {
+        items: {
+          include: { vocabItem: true },
+        },
+      },
+    });
+
+    if (!sourceDeck) fail(404, 'NOT_FOUND', 'Không tìm thấy bộ từ công khai.');
+
+    return this.db.forUser(userId, async tx => {
+      const scheduler = await tx.schedulerConfig.findFirstOrThrow({
+        where: { userId },
+        orderBy: { version: 'desc' },
+      });
+
+      const name = targetName || `${sourceDeck.name} (Bản sao)`;
+      const newDeck = await tx.deck.create({
+        data: {
+          userId,
+          name,
+          normalizedName: normalized(name),
+          description: sourceDeck.description,
+          color: sourceDeck.color,
+          icon: sourceDeck.icon,
+          topicGroup: topicGroup || sourceDeck.topicGroup,
+          isPublic: false,
+          forkCount: 0,
+        },
+      });
+
+      let importedWordsCount = 0;
+      for (const item of sourceDeck.items) {
+        const src = item.vocabItem;
+        if (src.deletedAt) continue;
+
+        const normWord = normalized(src.word);
+        const lexeme = await tx.lexeme.upsert({
+          where: {
+            normalized_partOfSpeech_language: {
+              normalized: normWord,
+              partOfSpeech: src.partOfSpeech,
+              language: 'en',
+            },
+          },
+          create: { lemma: src.word, normalized: normWord, partOfSpeech: src.partOfSpeech },
+          update: {},
+        });
+
+        const existing = await tx.vocabItem.findFirst({
+          where: { userId, lexemeId: lexeme.id, senseKey: src.senseKey, deletedAt: null },
+        });
+
+        if (!existing) {
+          await tx.vocabItem.create({
+            data: {
+              userId,
+              lexemeId: lexeme.id,
+              senseKey: src.senseKey,
+              word: src.word,
+              partOfSpeech: src.partOfSpeech,
+              meaningVi: src.meaningVi,
+              definitionEn: src.definitionEn,
+              exampleEn: src.exampleEn,
+              exampleVi: src.exampleVi,
+              phonetic: src.phonetic,
+              dialect: src.dialect,
+              cefr: src.cefr,
+              cefrSource: src.cefrSource,
+              tags: src.tags,
+              notes: src.notes,
+              sourceKind: 'user',
+              provenance: { kind: 'fork', sourceDeckId: deckId },
+              decks: { create: [{ deckId: newDeck.id }] },
+              cards: {
+                create: [{ userId, template: 'en_vi', schedulerConfigId: scheduler.id }],
+              },
+            },
+          });
+          importedWordsCount++;
+        } else {
+          await tx.deckItem.upsert({
+            where: { deckId_vocabItemId: { deckId: newDeck.id, vocabItemId: existing.id } },
+            create: { deckId: newDeck.id, vocabItemId: existing.id },
+            update: {},
+          });
+          importedWordsCount++;
+        }
+      }
+
+      await tx.deck.update({
+        where: { id: deckId },
+        data: { forkCount: { increment: 1 } },
+      });
+
+      this.invalidatePublicCache();
+
+      return {
+        deck: deckDto(newDeck),
+        importedCount: importedWordsCount,
+      };
     });
   }
   async duplicatePreview(userId: string, body: unknown) {

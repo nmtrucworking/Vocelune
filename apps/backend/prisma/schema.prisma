@@ -126,10 +126,15 @@ model Deck {
   description String @default("")
   color String @default("#4F46E5")
   icon String @default("book")
+  topicGroup String @default("Chung") @db.VarChar(60)
+  isPublic Boolean @default(false)
+  forkCount Int @default(0)
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
   items DeckItem[]
   @@index([userId, createdAt])
+  @@index([userId, topicGroup])
+  @@index([isPublic, deletedAt])
 }
 model DeckItem {
   deckId String @db.Uuid
