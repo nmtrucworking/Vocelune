@@ -132,21 +132,23 @@ Dự án đã có sẵn tệp cấu hình **[render.yaml](file:///Users/nguyenmi
 
 ## 5. Bước 4: Triển khai Frontend
 
-### Tùy chọn A: Triển khai trên Cloudflare Pages (Khuyên dùng)
+### Tùy chọn A: Triển khai trên Cloudflare Pages / Workers (Khuyên dùng)
 
-Trên Cloudflare Pages, bạn **KHÔNG** cần dùng `@cloudflare/next-on-pages` (vì đã cũ và xung đột phiên bản với Next.js 15). Dự án đã có sẵn lệnh build tĩnh tối ưu:
+Dự án Vocelune được tối ưu hóa theo mô hình **Next.js Static HTML Export** với proxy đảo ngược `_redirects` cho API.
 
-1. Đăng nhập Cloudflare Dashboard ➔ **Workers & Pages** ➔ **Create application** ➔ **Pages** ➔ **Connect to Git**.
-2. Chọn repo `nmtrucworking/Vocelune`.
-3. Cấu hình bản dựng:
-   * **Framework preset**: `None` (hoặc `Next.js (Static HTML Export)`)
+1. Đăng nhập Cloudflare Dashboard ➔ **Workers & Pages** ➔ chọn project `vocelune`.
+2. Vào **Settings** ➔ **Builds & deployments**:
+   * **Framework preset**: `None` hoặc `Next.js (Static HTML Export)`
+   * **Root directory**: `apps/frontend` (hoặc để trống)
    * **Build command**: `npm run build:pages`
-   * **Build output directory**: `apps/frontend/out`
-   * **Root directory**: để trống (chạy từ thư mục gốc của repo)
-4. Biến môi trường (Environment Variables):
+   * **Build output directory**: `out` (nếu Root directory là `apps/frontend`) hoặc `apps/frontend/out` (nếu Root directory để trống).
+   * **Deploy command**: 
+     * Nếu dùng **Cloudflare Pages**: Hãy **xóa trống** (không điền gì).
+     * Nếu dùng **Cloudflare Workers (Builds)** có `npx wrangler deploy`: Dự án đã cấu hình sẵn [`apps/frontend/wrangler.json`](file:///Users/nguyenminhtruc-mac/Developer/Projects/active/Vocelune/apps/frontend/wrangler.json) với `assets: { directory: "./out" }` và `build: { command: "" }` để ngăn chặn Cloudflare tự gọi nhầm `opennextjs-cloudflare`.
+3. Biến môi trường (Environment Variables):
    * `NODE_VERSION`: `22`
-   * `API_PROXY_TARGET`: URL backend Render (ví dụ `https://vocelune-api.onrender.com`). Quá trình build sẽ tự động tạo file `_redirects` để Cloudflare Edge proxy trực tiếp các yêu cầu `/api/v1/*` về backend, giải quyết triệt để vấn đề Cookie và CORS!
-5. Bấm **Save and Deploy**.
+   * `API_PROXY_TARGET`: URL backend Render (ví dụ `https://vocelune-api.onrender.com`).
+4. Bấm **Save** và bấm **Retry build**.
 
 ### Tùy chọn B: Triển khai Frontend trên Render
 

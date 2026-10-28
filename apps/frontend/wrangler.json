@@ -1,0 +1,14 @@
+{
+  "name": "vocelune",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "directory": "./out",
+    "not_found_handling": "single-page-application"
+  },
+  "build": {
+    "command": ""
+  }
+}
