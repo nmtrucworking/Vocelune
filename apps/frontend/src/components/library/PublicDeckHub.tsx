@@ -18,6 +18,7 @@ import { Deck } from '@/types';
 import { api } from '@/lib/api';
 import { PublicDeckPreviewModal } from './PublicDeckPreviewModal';
 import { triggerConfetti } from '@/lib/confetti';
+import { Pagination } from '../common/Pagination';
 
 interface PublicDeckHubProps {
   onForkSuccess?: () => void;
@@ -29,9 +30,11 @@ export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters
+  // Filters & Pagination
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(6);
 
   // Preview modal state
   const [previewDeckId, setPreviewDeckId] = useState<string | null>(null);
@@ -82,6 +85,22 @@ export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
       return true;
     });
   }, [publicDecks, selectedGroup, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredDecks.length / pageSize));
+  const paginatedDecks = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredDecks.slice(start, start + pageSize);
+  }, [filteredDecks, currentPage, pageSize]);
+
+  const handleGroupFilterChange = (grp: string) => {
+    setSelectedGroup(grp);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    setCurrentPage(1);
+  };
 
   const handleQuickFork = async (deck: Deck) => {
     if (forkingMap[deck.id]) return;
@@ -143,7 +162,7 @@ export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
               type="text"
               placeholder="Tìm chủ đề công khai theo tên, nhóm, mô tả..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="w-full pl-9 pr-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
             />
           </div>
@@ -151,7 +170,7 @@ export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
           {/* Group dropdown */}
           <select
             value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
+            onChange={(e) => handleGroupFilterChange(e.target.value)}
             className="px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary min-w-[180px]"
           >
             <option value="all">Tất cả nhóm chủ đề</option>
@@ -167,7 +186,7 @@ export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
           <button
             type="button"
-            onClick={() => setSelectedGroup('all')}
+            onClick={() => handleGroupFilterChange('all')}
             className={`px-2.5 py-1 rounded-full font-medium transition-all ${
               selectedGroup === 'all'
                 ? 'bg-brand-ink text-white shadow-xs'
@@ -183,7 +202,7 @@ export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
               <button
                 key={group}
                 type="button"
-                onClick={() => setSelectedGroup(group)}
+                onClick={() => handleGroupFilterChange(group)}
                 className={`px-2.5 py-1 rounded-full font-medium transition-all whitespace-nowrap ${
                   isActive
                     ? 'bg-brand-primary text-white shadow-xs'
@@ -214,10 +233,11 @@ export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
           <p className="mt-1">Hãy thử tìm từ khóa khác hoặc chuyển sang chế độ "Bộ từ của tôi" để chia sẻ bộ từ đầu tiên của bạn!</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredDecks.map((deck) => {
-            const isForking = !!forkingMap[deck.id];
-            const isForked = !!forkedSuccessMap[deck.id];
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {paginatedDecks.map((deck) => {
+              const isForking = !!forkingMap[deck.id];
+              const isForked = !!forkedSuccessMap[deck.id];
 
             return (
               <div
@@ -297,6 +317,25 @@ export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
               </div>
             );
           })}
+          </div>
+
+          {/* Public Decks Pagination */}
+          {filteredDecks.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filteredDecks.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+              pageSizeOptions={[6, 9, 12, 18]}
+              itemLabel="bộ từ công khai"
+              className="rounded-card border border-slate-200"
+            />
+          )}
         </div>
       )}
 

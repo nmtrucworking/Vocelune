@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "build:export": "OUTPUT_MODE=export next build",
+    "build:pages": "node scripts/build-pages.mjs",
     "start": "next start",
     "lint": "next lint"
   },

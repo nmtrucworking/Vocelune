@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { Deck } from '@/types';
+import { Pagination } from '../common/Pagination';
 
 const PRESET_COLORS = [
   { value: '#4F46E5', label: 'Indigo' },
@@ -61,13 +62,22 @@ const SUGGESTED_GROUPS = [
 interface DeckManagerProps {
   onSelectDeck?: (deckId: string) => void;
   selectedDeckId?: string;
+  createDeckWithTopic?: string | null;
+  onClearCreateDeckWithTopic?: () => void;
 }
 
-export function DeckManager({ onSelectDeck, selectedDeckId }: DeckManagerProps) {
+export function DeckManager({
+  onSelectDeck,
+  selectedDeckId,
+  createDeckWithTopic,
+  onClearCreateDeckWithTopic,
+}: DeckManagerProps) {
   const { decks, vocabItems, addDeck, updateDeck, deleteDeck } = useVocelune();
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [filterGroup, setFilterGroup] = useState<string>('all');
+  const [deckPage, setDeckPage] = useState(1);
+  const [deckPageSize, setDeckPageSize] = useState(6);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDeck, setEditingDeck] = useState<Deck | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,6 +89,21 @@ export function DeckManager({ onSelectDeck, selectedDeckId }: DeckManagerProps) 
   const [formColor, setFormColor] = useState('#4F46E5');
   const [formIcon, setFormIcon] = useState('book');
   const [formIsPublic, setFormIsPublic] = useState(false);
+
+  // Auto-open create modal if createDeckWithTopic is passed
+  React.useEffect(() => {
+    if (createDeckWithTopic) {
+      setEditingDeck(null);
+      setFormName('');
+      setFormGroup(createDeckWithTopic);
+      setFormDesc('');
+      setFormColor('#4F46E5');
+      setFormIcon('book');
+      setFormIsPublic(false);
+      setModalOpen(true);
+      onClearCreateDeckWithTopic?.();
+    }
+  }, [createDeckWithTopic, onClearCreateDeckWithTopic]);
 
   // Map word count per deck
   const wordCountMap = useMemo(() => {
@@ -102,11 +127,22 @@ export function DeckManager({ onSelectDeck, selectedDeckId }: DeckManagerProps) 
     return decks.filter((d) => (d.topicGroup || 'Chung') === filterGroup);
   }, [decks, filterGroup]);
 
+  const totalDeckPages = Math.max(1, Math.ceil(filteredDecks.length / deckPageSize));
+  const paginatedDecks = useMemo(() => {
+    const start = (deckPage - 1) * deckPageSize;
+    return filteredDecks.slice(start, start + deckPageSize);
+  }, [filteredDecks, deckPage, deckPageSize]);
+
+  const handleFilterGroupChange = (grp: string) => {
+    setFilterGroup(grp);
+    setDeckPage(1);
+  };
+
   // Reset & open create modal
-  const openCreateModal = () => {
+  const openCreateModal = (defaultGroup = 'Chung') => {
     setEditingDeck(null);
     setFormName('');
-    setFormGroup('Chung');
+    setFormGroup(defaultGroup);
     setFormDesc('');
     setFormColor('#4F46E5');
     setFormIcon('book');
@@ -213,7 +249,7 @@ export function DeckManager({ onSelectDeck, selectedDeckId }: DeckManagerProps) 
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={openCreateModal}
+            onClick={() => openCreateModal()}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control text-xs font-semibold shadow-xs transition-all"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -241,7 +277,7 @@ export function DeckManager({ onSelectDeck, selectedDeckId }: DeckManagerProps) 
             </span>
             <button
               type="button"
-              onClick={() => setFilterGroup('all')}
+              onClick={() => handleFilterGroupChange('all')}
               className={`px-2.5 py-1 rounded-full font-medium transition-all ${
                 filterGroup === 'all'
                   ? 'bg-brand-ink text-white shadow-xs'
@@ -257,7 +293,7 @@ export function DeckManager({ onSelectDeck, selectedDeckId }: DeckManagerProps) 
                 <button
                   key={group}
                   type="button"
-                  onClick={() => setFilterGroup(group)}
+                  onClick={() => handleFilterGroupChange(group)}
                   className={`px-2.5 py-1 rounded-full font-medium transition-all whitespace-nowrap ${
                     isActive
                       ? 'bg-brand-primary text-white shadow-xs'
@@ -272,7 +308,7 @@ export function DeckManager({ onSelectDeck, selectedDeckId }: DeckManagerProps) 
 
           {/* Decks Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredDecks.map((deck) => {
+            {paginatedDecks.map((deck) => {
               const wordCount = wordCountMap.get(deck.id) ?? (deck.itemCount || 0);
               const isSelected = selectedDeckId === deck.id;
 
@@ -373,6 +409,26 @@ export function DeckManager({ onSelectDeck, selectedDeckId }: DeckManagerProps) 
               );
             })}
           </div>
+
+          {/* Deck Pagination */}
+          {filteredDecks.length > deckPageSize && (
+            <div className="pt-2">
+              <Pagination
+                currentPage={deckPage}
+                totalPages={totalDeckPages}
+                totalItems={filteredDecks.length}
+                pageSize={deckPageSize}
+                onPageChange={setDeckPage}
+                onPageSizeChange={(sz) => {
+                  setDeckPageSize(sz);
+                  setDeckPage(1);
+                }}
+                pageSizeOptions={[6, 9, 12, 18]}
+                itemLabel="bộ từ"
+                className="rounded-lg border border-slate-200"
+              />
+            </div>
+          )}
         </div>
       )}
 

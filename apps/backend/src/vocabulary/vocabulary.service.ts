@@ -129,17 +129,79 @@ export class VocabularyService {
   }
 
   async topicGroups(userId: string) {
-    const decks = await this.db.deck.findMany({ where: { userId, deletedAt: null }, select: { topicGroup: true } });
-    const counts = new Map<string, number>();
+    const decks = await this.db.deck.findMany({
+      where: { userId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        icon: true,
+        topicGroup: true,
+        _count: { select: { items: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    type GroupData = {
+      name: string;
+      count: number;
+      wordCount: number;
+      decks: { id: string; name: string; color: string; icon: string; itemCount: number }[];
+    };
+
+    const groupMap = new Map<string, GroupData>();
+    const defaults = [
+      'Chung',
+      'IELTS / Academic',
+      'Giao tiếp hàng ngày',
+      'Công sở / Business',
+      'Du lịch & Đời sống',
+      'Công nghệ / Kỹ thuật',
+      'Ngữ pháp & Cấu trúc',
+    ];
+
+    for (const def of defaults) {
+      groupMap.set(def, { name: def, count: 0, wordCount: 0, decks: [] });
+    }
+
     for (const d of decks) {
       const g = d.topicGroup || 'Chung';
-      counts.set(g, (counts.get(g) ?? 0) + 1);
+      if (!groupMap.has(g)) {
+        groupMap.set(g, { name: g, count: 0, wordCount: 0, decks: [] });
+      }
+      const group = groupMap.get(g)!;
+      group.count += 1;
+      group.wordCount += d._count.items;
+      group.decks.push({
+        id: d.id,
+        name: d.name,
+        color: d.color,
+        icon: d.icon,
+        itemCount: d._count.items,
+      });
     }
-    const defaults = ['Chung', 'IELTS / Academic', 'Giao tiếp hàng ngày', 'Công sở / Business', 'Du lịch & Đời sống', 'Công nghệ / Kỹ thuật', 'Ngữ pháp & Cấu trúc'];
-    for (const def of defaults) {
-      if (!counts.has(def)) counts.set(def, 0);
-    }
-    return Array.from(counts.entries()).map(([name, count]) => ({ name, count }));
+
+    return Array.from(groupMap.values());
+  }
+
+  async renameTopicGroup(userId: string, oldName: string, body: unknown) {
+    const { newName } = z.object({ newName: z.string().trim().min(1).max(60) }).parse(body);
+    const result = await this.db.deck.updateMany({
+      where: { userId, topicGroup: oldName, deletedAt: null },
+      data: { topicGroup: newName },
+    });
+    this.invalidatePublicCache();
+    return { ok: true, updatedDecks: result.count, oldName, newName };
+  }
+
+  async deleteTopicGroup(userId: string, name: string, targetGroup = 'Chung') {
+    const safeTarget = (targetGroup && targetGroup.trim()) ? targetGroup.trim() : 'Chung';
+    const result = await this.db.deck.updateMany({
+      where: { userId, topicGroup: name, deletedAt: null },
+      data: { topicGroup: safeTarget },
+    });
+    this.invalidatePublicCache();
+    return { ok: true, reassignedDecks: result.count, targetGroup: safeTarget };
   }
 
   async createDeck(userId: string, body: unknown) {

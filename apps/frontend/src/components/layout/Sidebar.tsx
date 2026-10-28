@@ -78,7 +78,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
       <div className="space-y-6">
         {/* Brand Logo */}
         <div className="px-2">
-          <Logo size="md" showTagline />
+          <Logo size="md" showTagline href="/app/dashboard" />
         </div>
 
         {/* Navigation Links */}

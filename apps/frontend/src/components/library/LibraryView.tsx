@@ -19,8 +19,10 @@ import {
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, PartOfSpeech, CEFRLevel } from '@/types';
 import { DeckManager } from './DeckManager';
+import { TopicManager } from './TopicManager';
 import { PublicDeckHub } from './PublicDeckHub';
 import { WordDetailModal } from './WordDetailModal';
+import { Pagination } from '../common/Pagination';
 import { formatRelativeTime } from '@/lib/utils';
 import { AudioButton } from '../common/AudioButton';
 
@@ -31,8 +33,8 @@ interface LibraryViewProps {
 export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
   const { vocabItems, decks, cards, deleteVocabItem, settings } = useVocelune();
 
-  // Tab switch: 'my-vocab' | 'community-topics'
-  const [activeTab, setActiveTab] = useState<'my-vocab' | 'community-topics'>('my-vocab');
+  // Tab switch: 'my-vocab' | 'manage-topics' | 'community-topics'
+  const [activeTab, setActiveTab] = useState<'my-vocab' | 'manage-topics' | 'community-topics'>('my-vocab');
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -40,6 +42,13 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
   const [selectedDeckId, setSelectedDeckId] = useState<string>('all');
   const [selectedCefr, setSelectedCefr] = useState<string>('all');
   const [selectedPos, setSelectedPos] = useState<string>('all');
+
+  // Pagination for vocabulary table
+  const [vocabPage, setVocabPage] = useState(1);
+  const [vocabPageSize, setVocabPageSize] = useState(20);
+
+  // Deck creation prefill from topic manager
+  const [createDeckWithTopic, setCreateDeckWithTopic] = useState<string | null>(null);
 
   // Selected word for modal inspection
   const [selectedWord, setSelectedWord] = useState<VocabItem | null>(null);
@@ -110,6 +119,13 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
     return new Map(cards.map((c) => [c.vocabItemId, c]));
   }, [cards]);
 
+  // Paginated vocabulary items
+  const totalVocabPages = Math.max(1, Math.ceil(filteredVocab.length / vocabPageSize));
+  const paginatedVocab = useMemo(() => {
+    const start = (vocabPage - 1) * vocabPageSize;
+    return filteredVocab.slice(start, start + vocabPageSize);
+  }, [filteredVocab, vocabPage, vocabPageSize]);
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       {/* Top Header & Tab Navigation */}
@@ -152,6 +168,25 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
 
         <button
           type="button"
+          onClick={() => setActiveTab('manage-topics')}
+          className={`flex items-center gap-2 pb-3 px-3 transition-colors relative ${
+            activeTab === 'manage-topics'
+              ? 'text-brand-primary'
+              : 'text-text-secondary hover:text-brand-ink'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>Quản trị chủ đề</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-brand-primarySoft text-brand-primary border border-brand-primary/20">
+            Topic
+          </span>
+          {activeTab === 'manage-topics' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-primary rounded-full" />
+          )}
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('community-topics')}
           className={`flex items-center gap-2 pb-3 px-3 transition-colors relative ${
             activeTab === 'community-topics'
@@ -176,7 +211,10 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
           {/* Deck & Topic Group Manager Section */}
           <DeckManager
             selectedDeckId={selectedDeckId}
+            createDeckWithTopic={createDeckWithTopic}
+            onClearCreateDeckWithTopic={() => setCreateDeckWithTopic(null)}
             onSelectDeck={(deckId) => {
+              setVocabPage(1);
               if (selectedDeckId === deckId) {
                 setSelectedDeckId('all');
               } else {
@@ -197,7 +235,10 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                   type="text"
                   placeholder="Tìm theo từ, nghĩa, tag..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setVocabPage(1);
+                  }}
                   className="w-full pl-9 pr-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
                 />
               </div>
@@ -208,6 +249,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                 onChange={(e) => {
                   setSelectedTopicGroup(e.target.value);
                   setSelectedDeckId('all');
+                  setVocabPage(1);
                 }}
                 className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary font-medium"
               >
@@ -222,7 +264,10 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
               {/* Deck Filter */}
               <select
                 value={selectedDeckId}
-                onChange={(e) => setSelectedDeckId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedDeckId(e.target.value);
+                  setVocabPage(1);
+                }}
                 className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
               >
                 <option value="all">
@@ -238,7 +283,10 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
               {/* CEFR Level Filter */}
               <select
                 value={selectedCefr}
-                onChange={(e) => setSelectedCefr(e.target.value)}
+                onChange={(e) => {
+                  setSelectedCefr(e.target.value);
+                  setVocabPage(1);
+                }}
                 className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary font-medium"
               >
                 <option value="all">Tất cả cấp độ CEFR</option>
@@ -254,7 +302,10 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
               {/* Part of Speech Filter */}
               <select
                 value={selectedPos}
-                onChange={(e) => setSelectedPos(e.target.value)}
+                onChange={(e) => {
+                  setSelectedPos(e.target.value);
+                  setVocabPage(1);
+                }}
                 className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
               >
                 <option value="all">Tất cả từ loại (POS)</option>
@@ -313,7 +364,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredVocab.map((item) => {
+                    {paginatedVocab.map((item) => {
                       const card = cardMap.get(item.id);
                       const isDue = card && new Date(card.dueAt).getTime() <= Date.now();
                       const itemDeck = deckMap.get(item.deckId);
@@ -455,11 +506,44 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                 </div>
               </div>
             )}
+
+            {/* Vocabulary Table Pagination */}
+            {filteredVocab.length > 0 && (
+              <Pagination
+                currentPage={vocabPage}
+                totalPages={totalVocabPages}
+                totalItems={filteredVocab.length}
+                pageSize={vocabPageSize}
+                onPageChange={setVocabPage}
+                onPageSizeChange={(newSize) => {
+                  setVocabPageSize(newSize);
+                  setVocabPage(1);
+                }}
+                pageSizeOptions={[10, 20, 50, 100]}
+                itemLabel="từ vựng"
+              />
+            )}
           </div>
         </div>
       )}
 
-      {/* View 2: Community & Public Topics Hub */}
+      {/* View 2: Topic Groups Management */}
+      {activeTab === 'manage-topics' && (
+        <TopicManager
+          onSelectTopicForFilter={(topic) => {
+            setSelectedTopicGroup(topic);
+            setSelectedDeckId('all');
+            setVocabPage(1);
+            setActiveTab('my-vocab');
+          }}
+          onOpenCreateDeck={(defaultTopic) => {
+            setCreateDeckWithTopic(defaultTopic);
+            setActiveTab('my-vocab');
+          }}
+        />
+      )}
+
+      {/* View 3: Community & Public Topics Hub */}
       {activeTab === 'community-topics' && (
         <PublicDeckHub
           onForkSuccess={() => {

@@ -17,6 +17,12 @@ export class VocabularyController {
   @Post('vocabulary/:id/cards') card(@Req() r: AuthRequest, @Param('id') v: string, @Body() b: unknown) { return this.vocabulary.addCard(r.auth.userId, id(v), b); }
   @Get('decks') decks(@Req() r: AuthRequest) { return this.vocabulary.decks(r.auth.userId); }
   @Get('decks/groups') topicGroups(@Req() r: AuthRequest) { return this.vocabulary.topicGroups(r.auth.userId); }
+  @Patch('decks/groups/:name') renameTopicGroup(@Req() r: AuthRequest, @Param('name') name: string, @Body() b: unknown) {
+    return this.vocabulary.renameTopicGroup(r.auth.userId, decodeURIComponent(name), b);
+  }
+  @Delete('decks/groups/:name') deleteTopicGroup(@Req() r: AuthRequest, @Param('name') name: string, @Query('targetGroup') targetGroup?: string) {
+    return this.vocabulary.deleteTopicGroup(r.auth.userId, decodeURIComponent(name), targetGroup);
+  }
   @Public() @Get('decks/public') publicDecks(@Query() q: unknown) { return this.vocabulary.publicDecks(q); }
   @Public() @Get('decks/public/:id') publicDeckPreview(@Param('id') d: string) { return this.vocabulary.publicDeckPreview(id(d)); }
   @Post('decks/public/:id/fork') forkDeck(@Req() r: AuthRequest, @Param('id') d: string, @Body() b: unknown) { return this.vocabulary.forkDeck(r.auth.userId, id(d), b); }

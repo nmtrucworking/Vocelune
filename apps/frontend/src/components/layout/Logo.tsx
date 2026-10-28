@@ -5,9 +5,15 @@ interface LogoProps {
   size?: 'sm' | 'md' | 'lg';
   showTagline?: boolean;
   className?: string;
+  href?: string;
 }
 
-export function Logo({ size = 'md', showTagline = false, className = '' }: LogoProps) {
+export function Logo({
+  size = 'md',
+  showTagline = false,
+  className = '',
+  href = '/',
+}: LogoProps) {
   const iconSizes = {
     sm: 'w-7 h-7',
     md: 'w-9 h-9',
@@ -21,7 +27,7 @@ export function Logo({ size = 'md', showTagline = false, className = '' }: LogoP
   };
 
   return (
-    <Link href="/app/dashboard" className={`flex items-center gap-2.5 group select-none ${className}`}>
+    <Link href={href} className={`flex items-center gap-2.5 group select-none ${className}`}>
       {/* Recall Orbit SVG Icon with Floating/Pulse Animation */}
       <div
         className={`${iconSizes[size]} relative flex items-center justify-center rounded-control bg-brand-primary text-white shadow-sm transition-all duration-300 group-hover:scale-105 group-hover:shadow-elevated animate-float-orbit`}
