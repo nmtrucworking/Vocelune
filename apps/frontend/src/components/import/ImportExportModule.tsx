@@ -39,11 +39,44 @@ export function ImportExportModule() {
       <label className="block text-sm">Khi trùng đúng từ + từ loại + nghĩa<select disabled={busy} value={policy} onChange={e => { setPolicy(e.target.value); setJob(null); }} className="block border rounded-lg p-2 mt-1 w-full"><option value="skip">Bỏ qua</option><option value="merge">Cập nhật ghi chú và ví dụ</option><option value="create_new">Tạo bản riêng</option></select></label>
       <input disabled={busy} type="file" accept=".csv,.xlsx" aria-label="Chọn tệp từ vựng" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => upload(file)); e.target.value = ''; }} />
     </section>
-    {job && <section className="bg-white border rounded-xl p-6 space-y-4"><h2 className="font-semibold">2. Kiểm tra & xác nhận</h2><p className="text-sm">{job.rows.length} dòng · Trạng thái: {job.status}</p>
+    {job && <section className="bg-white border rounded-xl p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">2. Kiểm tra & xác nhận</h2>
+        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+          job.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+          job.status === 'failed' ? 'bg-rose-100 text-rose-800' :
+          ['queued', 'processing'].includes(job.status) ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-800'
+        }`}>
+          {job.status === 'completed' ? 'Hoàn thành' :
+           job.status === 'queued' ? 'Đang đợi xử lý' :
+           job.status === 'processing' ? 'Đang xử lý' :
+           job.status === 'failed' ? 'Thất bại' : 'Bản xem trước'}
+        </span>
+      </div>
+      <p className="text-sm">{job.rows.length} dòng · Trạng thái: {job.status}</p>
+
+      {job.status === 'completed' && job.result && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-sm">
+          🎉 <strong>Nhập thành công:</strong> Đã tạo mới <strong>{job.result.created}</strong> từ, cập nhật <strong>{job.result.updated}</strong> từ, bỏ qua <strong>{job.result.skipped}</strong> từ{job.result.failed > 0 ? `, lỗi ${job.result.failed} từ` : ''}.
+        </div>
+      )}
+
       <div className="overflow-auto max-h-96"><table className="w-full text-xs text-left"><thead><tr>{['Dòng', 'Từ', 'Từ loại', 'Nghĩa', 'Kết quả'].map(h => <th key={h} className="p-2 border-b">{h}</th>)}</tr></thead><tbody>{job.rows.slice(0, 100).map(row => <tr key={row.rowNumber}><td className="p-2 border-b">{row.rowNumber}</td><td className="p-2 border-b">{row.data?.word}</td><td className="p-2 border-b">{row.data?.partOfSpeech}</td><td className="p-2 border-b">{row.data?.meaningVi}</td><td className="p-2 border-b">{row.status}{row.duplicateId ? ' · Đã tồn tại' : ''}{row.error ? ` · ${typeof row.error === 'string' ? row.error : JSON.stringify(row.error)}` : ''}</td></tr>)}</tbody></table></div>
       {job.rows.length > 100 && <p className="text-xs">Hiển thị 100 dòng đầu.</p>}
       {job.result && <p className="text-sm">Đã tạo: {job.result.created} · Cập nhật: {job.result.updated} · Bỏ qua: {job.result.skipped} · Lỗi: {job.result.failed}</p>}
-      <div className="flex gap-3"><button disabled={busy || !['preview', 'failed'].includes(job.status)} onClick={() => void run(commit)} className="bg-brand-primary text-white px-4 py-2 rounded-lg disabled:opacity-50">{busy ? 'Đang xử lý…' : 'Xác nhận nhập'}</button><button disabled={busy} className="border rounded-lg px-4 py-2 text-sm" onClick={() => void run(async () => { setJob(await api(`/imports/${job.id}`)); await refresh(); })}>Kiểm tra trạng thái</button><button disabled={busy} className="border rounded-lg px-4 py-2 text-sm" onClick={() => void run(() => downloadApi(`/imports/${job.id}/errors.csv`, 'vocelune-import-errors.csv'))}>Tải báo cáo lỗi</button></div>
+      <div className="flex gap-3">
+        {job.status !== 'completed' && (
+          <button
+            disabled={busy}
+            onClick={() => void run(commit)}
+            className="bg-brand-primary text-white px-4 py-2 rounded-lg disabled:opacity-50"
+          >
+            {busy ? 'Đang xử lý…' : (['queued', 'processing'].includes(job.status) ? 'Xử lý ngay' : 'Xác nhận nhập')}
+          </button>
+        )}
+        <button disabled={busy} className="border rounded-lg px-4 py-2 text-sm" onClick={() => void run(async () => { const updated = await api<Job>(`/imports/${job.id}`); setJob(updated); await refresh(); })}>Kiểm tra trạng thái</button>
+        <button disabled={busy} className="border rounded-lg px-4 py-2 text-sm" onClick={() => void run(() => downloadApi(`/imports/${job.id}/errors.csv`, 'vocelune-import-errors.csv'))}>Tải báo cáo lỗi</button>
+      </div>
     </section>}
     <section className="bg-white border rounded-xl p-6 space-y-4"><h2 className="font-semibold">Xuất dữ liệu cá nhân</h2><p className="text-sm text-text-secondary">JSON gồm hồ sơ, kho từ, bộ từ, lịch thẻ, lịch sử ôn và kiểm tra. CSV/XLSX chứa kho từ có thể nhập lại.</p><div className="flex gap-3">{(['csv', 'xlsx', 'json'] as const).map(format => <button disabled={busy} key={format} className="border rounded-lg px-4 py-2 text-sm" onClick={() => void run(() => downloadApi('/exports', `vocelune-export.${format}`, { format }))}>Xuất .{format}</button>)}</div></section>
   </div>;

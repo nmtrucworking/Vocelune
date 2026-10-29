@@ -22,6 +22,7 @@ import { DictionaryService } from './integrations/dictionary.service';
 import { MediaService } from './integrations/media.service';
 import { AnalyticsController } from './analytics/analytics.controller';
 import { AnalyticsService } from './analytics/analytics.service';
+import { MaintenanceService } from './common/maintenance.service';
 
 @Module({ controllers: [VocabularyController], providers: [VocabularyService], exports: [VocabularyService] })
 export class VocabularyModule {}
@@ -44,5 +45,5 @@ class HealthController {
   @Public() @Get('ready') async ready() { await this.db.$queryRaw`SELECT 1`; return { status: 'ok', database: 'ready' }; }
 }
 @Module({ imports: [DatabaseModule, ThrottlerModule.forRoot([{ ttl: 60000, limit: 240 }]), IdentityModule, VocabularyModule, StudyModule, TestsModule, TransferModule, IntegrationsModule, AnalyticsModule],
-  controllers: [HealthController], providers: [{ provide: APP_GUARD, useClass: SessionGuard }, { provide: APP_GUARD, useClass: UserThrottlerGuard }] })
+  controllers: [HealthController], providers: [{ provide: APP_GUARD, useClass: SessionGuard }, { provide: APP_GUARD, useClass: UserThrottlerGuard }, MaintenanceService] })
 export class AppModule {}

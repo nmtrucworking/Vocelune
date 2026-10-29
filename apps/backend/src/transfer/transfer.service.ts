@@ -109,8 +109,17 @@ export class TransferService {
     return Buffer.from('\uFEFFrow_number,word,status,error\r\n' + rows.map(row => [row.rowNumber, row.data?.word ?? '', row.status, JSON.stringify(row.error)].map(csvCell).join(',')).join('\r\n'));
   }
   async get(userId: string, jobId: string) {
-    const job = await this.db.importJob.findFirst({ where: { id: jobId, userId } });
+    let job = await this.db.importJob.findFirst({ where: { id: jobId, userId } });
     if (!job) fail(404, 'NOT_FOUND', 'Không tìm thấy lượt nhập.');
+    if (job.status === 'queued' || job.status === 'processing') {
+      try {
+        await this.process(userId, jobId);
+        const updated = await this.db.importJob.findFirst({ where: { id: jobId, userId } });
+        if (updated) job = updated;
+      } catch (err) {
+        process.stderr.write(`Error processing queued import ${jobId}: ${(err as Error).message}\n`);
+      }
+    }
     return job;
   }
   async commit(userId: string, jobId: string) {
@@ -119,7 +128,7 @@ export class TransferService {
       if (!job) fail(404, 'NOT_FOUND', 'Không tìm thấy lượt nhập.');
       if (job.status === 'preview' || job.status === 'failed') await tx.importJob.update({ where: { id: jobId }, data: { status: 'queued' } });
     });
-    if (!config.REDIS_URL) await this.process(userId, jobId);
+    await this.process(userId, jobId);
     return this.get(userId, jobId);
   }
   async process(userId: string, jobId: string) {
@@ -132,21 +141,31 @@ export class TransferService {
         const rows = job.rows as unknown as ImportRow[];
         const pending = rows.filter(r => r.status === 'pending').slice(0, 50);
         for (const row of pending) {
-          const data = row.data!;
-          // Recheck duplicates under the user lock; a preview is not a reservation.
-          const existing = await tx.vocabItem.findFirst({ where: { userId, deletedAt: null, senseKey: this.vocabulary.senseKey(data), lexeme: { normalized: data.word.normalize('NFC').trim().toLowerCase(), partOfSpeech: data.partOfSpeech } } });
-          if (existing && job.policy !== 'create_new') {
-            row.resultId = existing.id;
-            if (job.policy === 'skip') row.status = 'skipped';
-            else {
-              // An exact sense duplicate can update user annotations without merging unrelated senses.
-              await tx.vocabItem.update({ where: { id: existing.id }, data: { exampleEn: data.exampleEn || existing.exampleEn, exampleVi: data.exampleVi || existing.exampleVi, notes: data.notes || existing.notes, tags: [...new Set([...existing.tags, ...data.tags])] } });
-              await tx.deckItem.upsert({ where: { deckId_vocabItemId: { deckId: job.deckId, vocabItemId: existing.id } }, create: { deckId: job.deckId, vocabItemId: existing.id }, update: {} });
-              row.status = 'updated';
+          if (!row.data) {
+            row.status = 'failed';
+            row.error = 'missing_data';
+            continue;
+          }
+          const data = row.data;
+          try {
+            // Recheck duplicates under the user lock; a preview is not a reservation.
+            const existing = await tx.vocabItem.findFirst({ where: { userId, deletedAt: null, senseKey: this.vocabulary.senseKey(data), lexeme: { normalized: data.word.normalize('NFC').trim().toLowerCase(), partOfSpeech: data.partOfSpeech } } });
+            if (existing && job.policy !== 'create_new') {
+              row.resultId = existing.id;
+              if (job.policy === 'skip') row.status = 'skipped';
+              else {
+                // An exact sense duplicate can update user annotations without merging unrelated senses.
+                await tx.vocabItem.update({ where: { id: existing.id }, data: { exampleEn: data.exampleEn || existing.exampleEn, exampleVi: data.exampleVi || existing.exampleVi, notes: data.notes || existing.notes, tags: [...new Set([...existing.tags, ...data.tags])] } });
+                await tx.deckItem.upsert({ where: { deckId_vocabItemId: { deckId: job.deckId, vocabItemId: existing.id } }, create: { deckId: job.deckId, vocabItemId: existing.id }, update: {} });
+                row.status = 'updated';
+              }
+            } else {
+              const item = await this.vocabulary.createInTx(tx, userId, data, job.policy === 'create_new');
+              row.resultId = item.id; row.status = 'created';
             }
-          } else {
-            const item = await this.vocabulary.createInTx(tx, userId, data, job.policy === 'create_new');
-            row.resultId = item.id; row.status = 'created';
+          } catch (rowErr) {
+            row.status = 'failed';
+            row.error = (rowErr as Error).message || 'row_processing_error';
           }
         }
         const finished = !rows.some(r => r.status === 'pending');
