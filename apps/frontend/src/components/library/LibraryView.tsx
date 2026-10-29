@@ -430,10 +430,10 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
           <div className="bg-surface-base border border-slate-200/80 rounded-card overflow-hidden shadow-xs">
             {filteredVocab.length > 0 ? (
               <div className="overflow-x-auto scrollbar-thin">
-                <table className="min-w-[960px] w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-text-secondary font-medium border-b border-slate-200/80">
+                <table className="min-w-[880px] w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-text-secondary font-semibold border-b border-slate-200/80 sticky top-0 z-10 shadow-2xs">
                     <tr>
-                      <th className="py-3 px-3 w-10 text-center shrink-0">
+                      <th className="py-2.5 px-3 w-10 text-center shrink-0">
                         <input
                           type="checkbox"
                           checked={isAllPageSelected}
@@ -445,16 +445,14 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                           title="Chọn tất cả từ trên trang này"
                         />
                       </th>
-                      <th className="py-3 px-3.5 w-[210px] min-w-[180px]">Từ vựng & Phiên âm</th>
-                      <th className="py-3 px-2 w-16 text-text-secondary italic">Từ loại</th>
-                      <th className="py-3 px-3.5 min-w-[160px] max-w-[240px]">Nghĩa tiếng Việt</th>
-                      <th className="py-3 px-3 w-[140px] min-w-[125px]">Chủ đề & Bộ từ</th>
-                      <th className="py-3 px-2 w-16 text-center">Cấp độ</th>
-                      <th className="py-3 px-3 w-[155px] min-w-[145px]">Trạng thái FSRS</th>
-                      <th className="py-3 px-2 w-24 text-center">Hạn ôn</th>
-                      <th className="py-3 px-3 w-16 text-right sticky right-0 bg-slate-50 border-l border-slate-200/60 z-10">
-                        Thao tác
-                      </th>
+                      <th className="py-2.5 px-3 w-[200px]">Từ vựng & Phiên âm</th>
+                      <th className="py-2.5 px-2 w-16 text-text-secondary italic">Từ loại</th>
+                      <th className="py-2.5 px-3 min-w-[150px] max-w-[220px]">Nghĩa tiếng Việt</th>
+                      <th className="py-2.5 px-2.5 w-[130px]">Chủ đề & Bộ từ</th>
+                      <th className="py-2.5 px-2 w-14 text-center">Cấp độ</th>
+                      <th className="py-2.5 px-3 w-[150px]">Trạng thái FSRS</th>
+                      <th className="py-2.5 px-2 w-20 text-center">Hạn ôn</th>
+                      <th className="py-2.5 px-2 w-14 text-center">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -478,7 +476,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                         >
                           {/* Selection Checkbox */}
                           <td
-                            className="py-3 px-3 text-center"
+                            className="py-2.5 px-3 text-center"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <input
@@ -490,7 +488,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                           </td>
 
                           {/* Word & Audio */}
-                          <td className="py-3 px-3.5">
+                          <td className="py-2.5 px-3">
                             <div className="flex items-center gap-2">
                               {item.imageUrl && (
                                 <img
@@ -518,20 +516,20 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                           </td>
 
                           {/* POS */}
-                          <td className="py-3 px-2 italic text-[11px] text-text-secondary truncate">
+                          <td className="py-2.5 px-2 italic text-[11px] text-text-secondary truncate">
                             {item.partOfSpeech}
                           </td>
 
                           {/* Meaning */}
-                          <td className="py-3 px-3.5 font-medium text-brand-ink max-w-[240px] truncate" title={item.meaningVi}>
+                          <td className="py-2.5 px-3 font-medium text-brand-ink max-w-[220px] truncate" title={item.meaningVi}>
                             {item.meaningVi}
                           </td>
 
                           {/* Topic Group & Deck */}
-                          <td className="py-3 px-3">
+                          <td className="py-2.5 px-2.5">
                             <div className="flex flex-col gap-0.5">
                               <span
-                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-700 bg-slate-100 max-w-[130px] truncate"
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-700 bg-slate-100 max-w-[125px] truncate"
                                 style={{
                                   borderLeft: `3px solid ${itemDeck?.color || '#4F46E5'}`,
                                 }}
@@ -539,14 +537,14 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                               >
                                 {itemDeck?.name || 'Từ vựng'}
                               </span>
-                              <span className="text-[9px] text-slate-400 truncate max-w-[130px]">
+                              <span className="text-[9px] text-slate-400 truncate max-w-[125px]">
                                 {itemDeck?.topicGroup || 'Chung'}
                               </span>
                             </div>
                           </td>
 
                           {/* CEFR */}
-                          <td className="py-3 px-2 text-center">
+                          <td className="py-2.5 px-2 text-center">
                             <span
                               className={`px-1.5 py-0.5 rounded font-extrabold text-[10px] ${
                                 item.cefr && item.cefr !== 'unknown'
@@ -559,12 +557,12 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                           </td>
 
                           {/* FSRS State with Inline Chart */}
-                          <td className="py-3 px-3">
+                          <td className="py-2.5 px-3">
                             <FsrsInlineStatus card={card} logs={cardLogs} />
                           </td>
 
                           {/* Due Time */}
-                          <td className="py-3 px-2 font-mono text-[11px] text-center">
+                          <td className="py-2.5 px-2 font-mono text-[11px] text-center">
                             {card ? (
                               isDue ? (
                                 <span
@@ -587,8 +585,8 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                             )}
                           </td>
 
-                          {/* Actions - Sticky Right Column */}
-                          <td className="py-3 px-3 text-right sticky right-0 bg-surface-base group-hover:bg-brand-canvas transition-colors border-l border-slate-100 shadow-[-6px_0_10px_-2px_rgba(0,0,0,0.03)] z-10">
+                          {/* Actions Column */}
+                          <td className="py-2.5 px-2 text-center">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
