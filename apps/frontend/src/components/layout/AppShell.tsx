@@ -15,8 +15,29 @@ interface AppShellProps {
 
 export function AppShell({ children, pageTitle }: AppShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const { isLoaded, user, error, clearError, refresh } = useVocelune();
+
+  // Load and persist sidebar collapsed state
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('vocelune_sidebar_collapsed');
+      if (saved !== null) {
+        setSidebarCollapsed(saved === 'true');
+      }
+    } catch {}
+  }, []);
+
+  const handleToggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('vocelune_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -46,8 +67,15 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
   return (
     <div className="min-h-screen bg-brand-canvas flex flex-col md:flex-row text-brand-ink antialiased">
       {/* Desktop Sidebar */}
-      <div className="hidden md:block w-64 shrink-0 h-screen sticky top-0">
-        <Sidebar />
+      <div
+        className={`hidden md:block shrink-0 h-screen sticky top-0 transition-all duration-200 ${
+          sidebarCollapsed ? 'w-18' : 'w-60'
+        }`}
+      >
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={handleToggleSidebar}
+        />
       </div>
 
       {/* Mobile Slide-over Sidebar */}
@@ -69,9 +97,11 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
           onOpenQuickAdd={() => setQuickAddOpen(true)}
           pageTitle={pageTitle}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={handleToggleSidebar}
         />
 
-        <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-3.5 md:p-6 max-w-7xl w-full mx-auto">
           {children}
         </main>
       </div>

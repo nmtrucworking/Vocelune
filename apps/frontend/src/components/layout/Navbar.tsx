@@ -21,6 +21,8 @@ import {
   ShieldCheck,
   BarChart3,
   FileSpreadsheet,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { useNotification } from '@/context/NotificationContext';
@@ -30,9 +32,17 @@ interface NavbarProps {
   onOpenMobileSidebar: () => void;
   onOpenQuickAdd: () => void;
   pageTitle?: string;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
-export function Navbar({ onOpenMobileSidebar, onOpenQuickAdd, pageTitle }: NavbarProps) {
+export function Navbar({
+  onOpenMobileSidebar,
+  onOpenQuickAdd,
+  pageTitle,
+  sidebarCollapsed = false,
+  onToggleSidebar,
+}: NavbarProps) {
   const router = useRouter();
   const { user, settings, streak, vocabItems, observedRetention, logout } = useVocelune();
   const { notify, soundEnabled, toggleSound, browserPushSupported, browserPushPermission, requestBrowserPermission } = useNotification();
@@ -77,7 +87,7 @@ export function Navbar({ onOpenMobileSidebar, onOpenQuickAdd, pageTitle }: Navba
 
   return (
     <header className="h-16 bg-surface-base border-b border-slate-200/80 px-4 md:px-8 flex items-center justify-between sticky top-0 z-30">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         {/* Mobile menu button */}
         <button
           onClick={onOpenMobileSidebar}
@@ -86,6 +96,22 @@ export function Navbar({ onOpenMobileSidebar, onOpenQuickAdd, pageTitle }: Navba
         >
           <Menu className="w-5 h-5" />
         </button>
+
+        {/* Desktop Sidebar Toggle */}
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="hidden md:flex p-2 rounded-lg text-slate-500 hover:text-brand-ink hover:bg-slate-100 transition-colors"
+            title={sidebarCollapsed ? 'Mở rộng thanh bên' : 'Thu gọn thanh bên'}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen className="w-4.5 h-4.5 text-brand-primary" />
+            ) : (
+              <PanelLeftClose className="w-4.5 h-4.5 text-slate-500" />
+            )}
+          </button>
+        )}
 
         {pageTitle && (
           <h1 className="text-base font-semibold text-brand-ink hidden sm:block">

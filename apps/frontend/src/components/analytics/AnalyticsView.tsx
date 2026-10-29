@@ -310,12 +310,25 @@ export function AnalyticsView() {
                 <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#64748b' }} stroke="#cbd5e1" />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} stroke="#cbd5e1" />
                 <Tooltip
-                  formatter={(val: any) => [`${val} thẻ cần ôn`, 'Số lượng']}
-                  contentStyle={{
-                    backgroundColor: '#17213B',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    fontSize: '12px',
+                  content={({ active, payload }: any) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="bg-brand-ink text-white p-2.5 rounded-lg text-xs shadow-lg space-y-1">
+                          <p className="font-bold">{data.day}</p>
+                          <p className="text-brand-mint font-semibold">
+                            Tổng cần học: {data.cards} thẻ
+                          </p>
+                          {data.reviewCards !== undefined && (
+                            <div className="text-[11px] text-slate-300 space-y-0.5 border-t border-slate-700 pt-1">
+                              <p>• Thẻ ôn tập: {data.reviewCards} thẻ</p>
+                              <p>• Thẻ mới dự kiến: {data.newCards} thẻ</p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                    return null;
                   }}
                 />
                 <Bar

@@ -49,9 +49,27 @@ export class AnalyticsService {
       }, 0) / scored.length;
       return { day: `Ngày ${day}`, retrievability: Math.round(average * 100), threshold: settings.desiredRetention * 100 };
     }) : [];
+    const newCardsTotal = cards.filter(c => !c.suspended && c.state === 'new').length;
+    let newCardsPool = newCardsTotal;
     const forecastData = Array.from({ length: 7 }, (_, i) => {
       const date = DateTime.fromISO(today, { zone: settings.timezone }).plus({ days: i });
-      return { day: date.setLocale('vi').toFormat('ccc d/M'), cards: cards.filter(c => !c.suspended && c.state !== 'new' && studyDate(c.dueAt, settings.timezone, settings.dayStartHour) === date.toISODate()).length };
+      const dateStr = date.toISODate() || today;
+      let dueReviews = 0;
+      if (i === 0) {
+        // Today includes all past due & due today cards that are review/learning
+        dueReviews = cards.filter(c => !c.suspended && c.state !== 'new' && (studyDate(c.dueAt, settings.timezone, settings.dayStartHour) <= dateStr || c.dueAt <= now)).length;
+      } else {
+        dueReviews = cards.filter(c => !c.suspended && c.state !== 'new' && studyDate(c.dueAt, settings.timezone, settings.dayStartHour) === dateStr).length;
+      }
+      const newForDay = Math.min(newCardsPool, i === 0 ? queue.counts.newRemaining : settings.newCardsPerDay);
+      newCardsPool = Math.max(0, newCardsPool - newForDay);
+      const totalLoad = dueReviews + newForDay;
+      return {
+        day: date.setLocale('vi').toFormat('ccc d/M'),
+        cards: totalLoad,
+        reviewCards: dueReviews,
+        newCards: newForDay,
+      };
     });
     const testCount = await this.db.testAttempt.count({ where: { userId, status: { not: 'in_progress' } } });
     return { forecastData, forgettingCurveData, averageStability: scored.length ? scored.reduce((sum, c) => sum + c.stability, 0) / scored.length : 0, streak, observedRetention: reviewLogs.length ? Math.round(100 * success / reviewLogs.length) : null, sampleSize: reviewLogs.length,

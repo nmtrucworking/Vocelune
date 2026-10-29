@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -20,6 +20,7 @@ import {
   GraduationCap,
   AlertTriangle,
   Play,
+  Loader2,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { useNotification } from '@/context/NotificationContext';
@@ -59,6 +60,8 @@ export function TopicManager({
     decks,
     vocabItems,
     cards,
+    dueCards,
+    addDeck,
     updateDeck,
     renameTopicGroup,
     deleteTopicGroup,
@@ -67,6 +70,23 @@ export function TopicManager({
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
+
+  // Persistent list of custom topics so newly created topics never vanish
+  const [customTopics, setCustomTopics] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('vocelune_custom_topics');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vocelune_custom_topics', JSON.stringify(customTopics));
+    } catch {}
+  }, [customTopics]);
 
   // Modals state
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -88,7 +108,7 @@ export function TopicManager({
 
   const [busy, setBusy] = useState(false);
 
-  // Map word count and due cards per deck
+  // Map word count and actual due cards per deck (based on FSRS dueCards)
   const { deckWordCount, deckDueCount } = useMemo(() => {
     const wordCount = new Map<string, number>();
     for (const item of vocabItems) {
@@ -97,21 +117,18 @@ export function TopicManager({
 
     const dueCount = new Map<string, number>();
     const vocabDeckMap = new Map(vocabItems.map((v) => [v.id, v.deckId]));
-    const now = Date.now();
 
-    for (const card of cards) {
-      if (new Date(card.dueAt).getTime() <= now) {
-        const deckId = vocabDeckMap.get(card.vocabItemId);
-        if (deckId) {
-          dueCount.set(deckId, (dueCount.get(deckId) || 0) + 1);
-        }
+    for (const card of dueCards) {
+      const deckId = vocabDeckMap.get(card.vocabItemId);
+      if (deckId) {
+        dueCount.set(deckId, (dueCount.get(deckId) || 0) + 1);
       }
     }
 
     return { deckWordCount: wordCount, deckDueCount: dueCount };
-  }, [vocabItems, cards]);
+  }, [vocabItems, dueCards]);
 
-  // Group all user decks into topic groups
+  // Group all user decks into topic groups + preserve empty custom topics
   const allTopicGroups: TopicGroupDetail[] = useMemo(() => {
     const groupMap = new Map<string, Deck[]>();
 
@@ -122,6 +139,13 @@ export function TopicManager({
         groupMap.set(g, []);
       }
       groupMap.get(g)!.push(d);
+    }
+
+    // Ensure custom created topics exist even if no decks are assigned yet
+    for (const ct of customTopics) {
+      if (!groupMap.has(ct)) {
+        groupMap.set(ct, []);
+      }
     }
 
     // Always guarantee 'Chung' exists if list is empty
@@ -156,7 +180,7 @@ export function TopicManager({
       if (a.decks.length === 0 && b.decks.length > 0) return 1;
       return a.name.localeCompare(b.name);
     });
-  }, [decks, deckWordCount, deckDueCount]);
+  }, [decks, customTopics, deckWordCount, deckDueCount]);
 
   // Filter topics by search query
   const filteredTopics = useMemo(() => {
@@ -197,7 +221,19 @@ export function TopicManager({
         for (const deckId of selectedDecksToAssign) {
           await updateDeck(deckId, { topicGroup: trimmed });
         }
+      } else {
+        // Automatically create a default deck under this topic so the topic is persisted in DB
+        await addDeck({
+          name: `Từ vựng ${trimmed}`,
+          topicGroup: trimmed,
+          description: `Bộ từ thuộc chủ đề ${trimmed}`,
+          color: '#4F46E5',
+          icon: 'folder',
+          isPublic: false,
+        });
       }
+
+      setCustomTopics((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
       notify.success('Đã tạo chủ đề mới!', `Chủ đề "${trimmed}" đã được khởi tạo thành công.`);
       setCreateModalOpen(false);
       setNewTopicName('');
@@ -211,12 +247,14 @@ export function TopicManager({
 
   const handleRenameTopic = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetRenameTopic || !renamedName.trim()) return;
+    const trimmedNew = renamedName.trim();
+    if (!targetRenameTopic || !trimmedNew) return;
 
     setBusy(true);
     try {
-      await renameTopicGroup(targetRenameTopic, renamedName.trim());
-      notify.success('Đã đổi tên chủ đề!', `Chủ đề đã được cập nhật thành "${renamedName.trim()}".`);
+      await renameTopicGroup(targetRenameTopic, trimmedNew);
+      setCustomTopics((prev) => prev.map((t) => (t === targetRenameTopic ? trimmedNew : t)));
+      notify.success('Đã đổi tên chủ đề!', `Chủ đề đã được cập nhật thành "${trimmedNew}".`);
       setRenameModalOpen(false);
       setTargetRenameTopic(null);
       setRenamedName('');
@@ -234,6 +272,7 @@ export function TopicManager({
     setBusy(true);
     try {
       await deleteTopicGroup(targetDeleteTopic, reassignTargetGroup);
+      setCustomTopics((prev) => prev.filter((t) => t !== targetDeleteTopic));
       notify.info('Đã xóa chủ đề', `Đã xóa "${targetDeleteTopic}". Các bộ từ đã được chuyển sang "${reassignTargetGroup}".`);
       setDeleteModalOpen(false);
       setTargetDeleteTopic(null);
@@ -633,9 +672,10 @@ export function TopicManager({
                 <button
                   type="submit"
                   disabled={busy || !newTopicName.trim()}
-                  className="px-4 py-2 bg-brand-primary hover:bg-brand-primaryHover disabled:opacity-50 text-white rounded-control text-xs font-bold shadow-xs"
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-primary hover:bg-brand-primaryHover disabled:opacity-50 text-white rounded-control text-xs font-bold shadow-xs transition-all"
                 >
-                  {busy ? 'Đang tạo...' : 'Tạo chủ đề'}
+                  {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{busy ? 'Đang tạo...' : 'Tạo chủ đề'}</span>
                 </button>
               </div>
             </form>
@@ -689,9 +729,10 @@ export function TopicManager({
                 <button
                   type="submit"
                   disabled={busy || !renamedName.trim() || renamedName.trim() === targetRenameTopic}
-                  className="px-4 py-2 bg-brand-primary hover:bg-brand-primaryHover disabled:opacity-50 text-white rounded-control text-xs font-bold shadow-xs"
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-primary hover:bg-brand-primaryHover disabled:opacity-50 text-white rounded-control text-xs font-bold shadow-xs transition-all"
                 >
-                  {busy ? 'Đang lưu...' : 'Lưu tên mới'}
+                  {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{busy ? 'Đang lưu...' : 'Lưu tên mới'}</span>
                 </button>
               </div>
             </form>
@@ -745,9 +786,10 @@ export function TopicManager({
                 <button
                   type="submit"
                   disabled={busy}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-control text-xs font-bold shadow-xs"
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-control text-xs font-bold shadow-xs transition-all"
                 >
-                  {busy ? 'Đang xóa...' : 'Xác nhận xóa và chuyển bộ từ'}
+                  {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{busy ? 'Đang xóa...' : 'Xác nhận xóa và chuyển bộ từ'}</span>
                 </button>
               </div>
             </form>
@@ -822,9 +864,10 @@ export function TopicManager({
                 <button
                   type="submit"
                   disabled={busy || !selectedDeckToMove}
-                  className="px-4 py-2 bg-brand-primary hover:bg-brand-primaryHover disabled:opacity-50 text-white rounded-control text-xs font-bold shadow-xs"
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-primary hover:bg-brand-primaryHover disabled:opacity-50 text-white rounded-control text-xs font-bold shadow-xs transition-all"
                 >
-                  {busy ? 'Đang chuyển...' : 'Lưu thay đổi'}
+                  {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{busy ? 'Đang chuyển...' : 'Lưu thay đổi'}</span>
                 </button>
               </div>
             </form>
