@@ -51,9 +51,11 @@ export class AnalyticsService {
     }) : [];
     const newCardsTotal = cards.filter(c => !c.suspended && c.state === 'new').length;
     let newCardsPool = newCardsTotal;
+    // Use actual calendar date in user's timezone so forecast always starts from today (e.g. 30/10)
+    const calendarToday = DateTime.fromJSDate(now).setZone(settings.timezone).toISODate() || today;
     const forecastData = Array.from({ length: 7 }, (_, i) => {
-      const date = DateTime.fromISO(today, { zone: settings.timezone }).plus({ days: i });
-      const dateStr = date.toISODate() || today;
+      const date = DateTime.fromISO(calendarToday, { zone: settings.timezone }).plus({ days: i });
+      const dateStr = date.toISODate() || calendarToday;
       let dueReviews = 0;
       if (i === 0) {
         // Today includes all past due & due today cards that are review/learning

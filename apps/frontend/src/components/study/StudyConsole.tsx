@@ -44,27 +44,34 @@ export function StudyConsole() {
 
   const deckMap = useMemo(() => new Map(decks.map((d) => [d.id, d])), [decks]);
 
+  const dueIdSet = useMemo(() => new Set(dueCards.map((c) => c.id)), [dueCards]);
+
   const scopeStats = useMemo(() => {
-    const now = Date.now();
-    let due = 0;
     let ahead = 0;
     for (const c of cards) {
       if (c.suspended) continue;
-      const isDue = c.state === 'new' || new Date(c.dueAt).getTime() <= now;
-      if (isDue) due++;
-      else ahead++;
+      if (!dueIdSet.has(c.id)) {
+        ahead++;
+      }
     }
-    return { due, ahead, all: due + ahead };
-  }, [cards]);
+    return {
+      due: dueCards.length,
+      ahead,
+      all: dueCards.length + ahead,
+    };
+  }, [dueCards, cards, dueIdSet]);
 
   const candidateCards = useMemo(() => {
-    const now = Date.now();
-    return cards.filter((card) => {
-      if (card.suspended) return false;
-      const isDue = card.state === 'new' || new Date(card.dueAt).getTime() <= now;
-      if (studyScope === 'due' && !isDue) return false;
-      if (studyScope === 'ahead' && isDue) return false;
+    let pool: Card[] = [];
+    if (studyScope === 'due') {
+      pool = dueCards;
+    } else if (studyScope === 'ahead') {
+      pool = cards.filter((c) => !c.suspended && !dueIdSet.has(c.id));
+    } else {
+      pool = cards.filter((c) => !c.suspended);
+    }
 
+    return pool.filter((card) => {
       const vocab = vocabItems.find((v) => v.id === card.vocabItemId);
       if (!vocab) return false;
       if (selectedDeckId !== 'all' && vocab.deckId !== selectedDeckId) return false;
@@ -74,7 +81,7 @@ export function StudyConsole() {
       }
       return true;
     });
-  }, [cards, studyScope, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
+  }, [dueCards, cards, dueIdSet, studyScope, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
 
   const grading = useRef(false);
   const [revealReady, setRevealReady] = useState(false);
@@ -113,8 +120,8 @@ export function StudyConsole() {
 
   const isCurrentCardDue = useMemo(() => {
     if (!currentCard) return true;
-    return currentCard.state === 'new' || new Date(currentCard.dueAt).getTime() <= Date.now();
-  }, [currentCard]);
+    return dueIdSet.has(currentCard.id);
+  }, [currentCard, dueIdSet]);
 
   const dueRelativeText = useMemo(() => {
     if (!currentCard) return '';

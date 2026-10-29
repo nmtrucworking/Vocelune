@@ -25,7 +25,7 @@ export class MaintenanceService implements OnApplicationBootstrap, OnApplication
       void this.runTick().catch(err => {
         this.logger.error(`Maintenance tick error: ${(err as Error).message}`);
       });
-    }, 15000);
+    }, 60000);
 
     setTimeout(() => {
       void this.runTick().catch(() => {});

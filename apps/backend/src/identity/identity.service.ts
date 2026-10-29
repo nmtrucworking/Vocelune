@@ -6,6 +6,7 @@ import { Database, json } from '../common/db';
 import { fail, normalized, uuid } from '../common/http';
 import { settingsDto } from '../common/serializers';
 import { encryptEmail } from '../common/crypto';
+import { sendEmailDirect } from '../common/mailer';
 import { config } from '../common/config';
 import { hash, passwordHash, passwordMatches, secret } from './security';
 import { LIBRARY_VERSION, MODEL_VERSION, parameters } from '../study/scheduler';
@@ -135,15 +136,26 @@ export class IdentityService {
   }
   async forgot(body: unknown) {
     const { email } = credentials.pick({ email: true }).parse(body);
-    if (!config.EMAIL_ENCRYPTION_KEY || !config.SMTP_HOST) fail(503, 'EMAIL_NOT_CONFIGURED', 'Chưa cấu hình dịch vụ gửi email.');
+    const hasEmailProvider = Boolean(config.RESEND_API_KEY || config.SMTP_HOST || config.SMTP_PASSWORD?.startsWith('re_') || process.env.RESEND_API_KEY);
+    if (!hasEmailProvider) fail(503, 'EMAIL_NOT_CONFIGURED', 'Chưa cấu hình dịch vụ gửi email (RESEND_API_KEY hoặc SMTP_HOST).');
     const user = await this.db.user.findUnique({ where: { email } });
     if (user) {
       const token = secret();
+      const appOrigin = config.APP_ORIGIN || 'https://vocelune.nguyenminhtruc.site';
+      const resetText = `Đặt lại mật khẩu trong 30 phút: ${appOrigin}/reset-password#token=${token}`;
       await this.db.forUser(user.id, async tx => {
         await tx.passwordResetToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } });
         await tx.passwordResetToken.create({ data: { userId: user.id, tokenHash: hash(token), expiresAt: new Date(Date.now() + 30 * 60000) } });
-        const appOrigin = config.APP_ORIGIN || 'https://vocelune.nguyenminhtruc.site';
-        await tx.emailOutbox.create({ data: { userId: user.id, to: user.email, subject: 'Đặt lại mật khẩu Vocelune', text: encryptEmail(`Đặt lại mật khẩu trong 30 phút: ${appOrigin}/reset-password#token=${token}`) } });
+        await tx.emailOutbox.create({ data: { userId: user.id, to: user.email, subject: 'Đặt lại mật khẩu Vocelune', text: encryptEmail(resetText) } });
+      });
+      setImmediate(() => {
+        void sendEmailDirect({
+          to: user.email,
+          subject: 'Đặt lại mật khẩu Vocelune',
+          text: resetText,
+        }).catch(err => {
+          process.stderr.write(`Password reset email dispatch error: ${(err as Error).message}\n`);
+        });
       });
     }
     return { message: 'Nếu email tồn tại, hướng dẫn đặt lại mật khẩu sẽ được gửi.' };
