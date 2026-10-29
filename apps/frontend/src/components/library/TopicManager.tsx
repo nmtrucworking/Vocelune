@@ -301,24 +301,24 @@ export function TopicManager({
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-150">
+    <div className="space-y-4 animate-in fade-in duration-150">
       {/* Top Banner / Stats */}
-      <div className="bg-surface-base border border-slate-200/90 rounded-card p-5 sm:p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-brand-primarySoft text-brand-primary flex items-center justify-center font-bold">
-              <Layers className="w-4 h-4" />
+      <div className="bg-surface-base border border-slate-200/90 rounded-card p-3.5 sm:p-4 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-1.5">
+            <div className="w-7 h-7 rounded-lg bg-brand-primarySoft text-brand-primary flex items-center justify-center font-bold">
+              <Layers className="w-3.5 h-3.5" />
             </div>
-            <h3 className="font-extrabold text-base sm:text-lg text-brand-ink">
+            <h3 className="font-bold text-sm sm:text-base text-brand-ink">
               Quản trị chủ đề từ vựng (Topic Groups)
             </h3>
           </div>
-          <p className="text-xs text-text-secondary max-w-xl">
+          <p className="text-[11px] text-text-secondary max-w-xl">
             Tổ chức các bộ từ (decks) theo các nhóm chủ đề lớn. Đổi tên, phân loại lại hoặc gán nhanh các bộ từ vào chủ đề phù hợp để ôn tập có hệ thống.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => {
@@ -326,46 +326,46 @@ export function TopicManager({
               setSelectedDecksToAssign([]);
               setCreateModalOpen(true);
             }}
-            className="px-4 py-2 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 active:scale-95"
+            className="px-3 py-1.5 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control font-semibold text-xs shadow-2xs transition-all flex items-center gap-1 active:scale-95"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             <span>Tạo chủ đề mới</span>
           </button>
         </div>
       </div>
 
       {/* Search & Overview Stats Bar */}
-      <div className="bg-surface-base border border-slate-200/80 rounded-card p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-surface-base border border-slate-200/80 rounded-card p-3 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-2.5">
         {/* Search */}
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        <div className="relative w-full sm:w-72">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Tìm theo tên chủ đề hoặc bộ từ..."
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => handleSearchChange('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-3 h-3" />
             </button>
           )}
         </div>
 
         {/* Aggregate Pills */}
-        <div className="flex items-center gap-2 text-xs text-text-secondary self-start sm:self-auto overflow-x-auto">
-          <span className="px-2.5 py-1 rounded-md bg-slate-100 font-medium whitespace-nowrap">
+        <div className="flex items-center gap-1.5 text-xs text-text-secondary self-start sm:self-auto overflow-x-auto">
+          <span className="px-2 py-0.5 rounded bg-slate-100 font-medium whitespace-nowrap text-[11px]">
             Tổng: <strong className="text-brand-ink">{allTopicGroups.length}</strong> chủ đề
           </span>
-          <span className="px-2.5 py-1 rounded-md bg-slate-100 font-medium whitespace-nowrap">
+          <span className="px-2 py-0.5 rounded bg-slate-100 font-medium whitespace-nowrap text-[11px]">
             Bộ từ: <strong className="text-brand-ink">{decks.length}</strong> decks
           </span>
-          <span className="px-2.5 py-1 rounded-md bg-slate-100 font-medium whitespace-nowrap">
+          <span className="px-2 py-0.5 rounded bg-slate-100 font-medium whitespace-nowrap text-[11px]">
             Từ vựng: <strong className="text-brand-ink">{vocabItems.length}</strong> từ
           </span>
         </div>
@@ -373,7 +373,7 @@ export function TopicManager({
 
       {/* Topic Groups Grid */}
       {paginatedTopics.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {paginatedTopics.map((topic, idx) => (
             <motion.div
               key={topic.name}
@@ -383,24 +383,24 @@ export function TopicManager({
               className="bg-surface-base border border-slate-200/90 rounded-card shadow-card hover:shadow-elevated transition-all flex flex-col justify-between overflow-hidden group"
             >
               {/* Card Header */}
-              <div className="p-5 space-y-4">
+              <div className="p-3.5 space-y-3">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-lg bg-brand-primarySoft text-brand-primary flex items-center justify-center font-bold shrink-0">
-                      <Folder className="w-4 h-4" />
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-brand-primarySoft text-brand-primary flex items-center justify-center font-bold shrink-0">
+                      <Folder className="w-3.5 h-3.5" />
                     </div>
                     <div>
-                      <h4 className="font-extrabold text-sm sm:text-base text-brand-ink group-hover:text-brand-primary transition-colors">
+                      <h4 className="font-bold text-xs sm:text-sm text-brand-ink group-hover:text-brand-primary transition-colors">
                         {topic.name}
                       </h4>
-                      <span className="text-[11px] text-text-secondary">
+                      <span className="text-[10px] text-text-secondary">
                         {topic.isDefault ? 'Chủ đề hệ thống' : 'Chủ đề tùy biến'}
                       </span>
                     </div>
                   </div>
 
                   {/* Actions dropdown or buttons */}
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-0.5">
                     <button
                       type="button"
                       onClick={() => {
@@ -408,10 +408,10 @@ export function TopicManager({
                         setRenamedName(topic.name);
                         setRenameModalOpen(true);
                       }}
-                      className="p-1.5 rounded-md hover:bg-slate-100 text-slate-400 hover:text-brand-ink transition-colors"
+                      className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-brand-ink transition-colors"
                       title="Đổi tên chủ đề"
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
+                      <Edit2 className="w-3 h-3" />
                     </button>
 
                     {topic.name !== 'Chung' && (
@@ -422,33 +422,33 @@ export function TopicManager({
                           setReassignTargetGroup('Chung');
                           setDeleteModalOpen(true);
                         }}
-                        className="p-1.5 rounded-md hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors"
+                        className="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors"
                         title="Xóa chủ đề (chuyển bộ từ)"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3 h-3" />
                       </button>
                     )}
                   </div>
                 </div>
 
                 {/* Topic Stats Badges */}
-                <div className="grid grid-cols-3 gap-2 py-2 px-3 rounded-control bg-slate-50 border border-slate-100 text-center">
+                <div className="grid grid-cols-3 gap-1.5 py-1.5 px-2.5 rounded-control bg-slate-50 border border-slate-100 text-center">
                   <div>
-                    <div className="text-[10px] text-text-secondary">Bộ từ</div>
-                    <div className="font-bold text-xs text-brand-ink">
+                    <div className="text-[9px] text-text-secondary">Bộ từ</div>
+                    <div className="font-bold text-[11px] text-brand-ink">
                       {topic.decks.length}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-text-secondary">Từ vựng</div>
-                    <div className="font-bold text-xs text-brand-ink">
+                    <div className="text-[9px] text-text-secondary">Từ vựng</div>
+                    <div className="font-bold text-[11px] text-brand-ink">
                       {topic.wordCount}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-text-secondary">Đến hạn</div>
+                    <div className="text-[9px] text-text-secondary">Đến hạn</div>
                     <div
-                      className={`font-bold text-xs ${
+                      className={`font-bold text-[11px] ${
                         topic.dueCardCount > 0 ? 'text-rose-600' : 'text-slate-400'
                       }`}
                     >

@@ -200,11 +200,11 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+    <div className="space-y-4 max-w-6xl mx-auto">
       {/* Top Header & Tab Navigation */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-brand-ink">Thư viện từ vựng & Chủ đề</h2>
+          <h2 className="text-lg font-bold text-brand-ink">Thư viện từ vựng & Chủ đề</h2>
           <p className="text-xs text-text-secondary mt-0.5">
             Quản lý kho từ vựng cá nhân, phân nhóm theo chủ đề và khám phá các bộ từ công khai từ cộng đồng.
           </p>
@@ -213,9 +213,9 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
         {activeTab === 'my-vocab' && (
           <button
             onClick={onOpenQuickAdd}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control font-semibold text-xs shadow-sm transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control font-semibold text-xs shadow-2xs transition-all active:scale-95"
           >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Thêm từ mới</span>
           </button>
         )}
@@ -226,13 +226,13 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
         <button
           type="button"
           onClick={() => setActiveTab('my-vocab')}
-          className={`flex items-center gap-2 pb-3 px-3 transition-colors relative ${
+          className={`flex items-center gap-1.5 pb-2 px-2.5 transition-colors relative ${
             activeTab === 'my-vocab'
               ? 'text-brand-primary'
               : 'text-text-secondary hover:text-brand-ink'
           }`}
         >
-          <BookOpen className="w-4 h-4" />
+          <BookOpen className="w-3.5 h-3.5" />
           <span>Bộ từ của tôi ({vocabItems.length})</span>
           {activeTab === 'my-vocab' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-primary rounded-full" />
@@ -242,13 +242,13 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
         <button
           type="button"
           onClick={() => setActiveTab('manage-topics')}
-          className={`flex items-center gap-2 pb-3 px-3 transition-colors relative ${
+          className={`flex items-center gap-1.5 pb-2 px-2.5 transition-colors relative ${
             activeTab === 'manage-topics'
               ? 'text-brand-primary'
               : 'text-text-secondary hover:text-brand-ink'
           }`}
         >
-          <Layers className="w-4 h-4" />
+          <Layers className="w-3.5 h-3.5" />
           <span>Quản trị chủ đề</span>
           <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-brand-primarySoft text-brand-primary border border-brand-primary/20">
             Topic
@@ -261,15 +261,15 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
         <button
           type="button"
           onClick={() => setActiveTab('community-topics')}
-          className={`flex items-center gap-2 pb-3 px-3 transition-colors relative ${
+          className={`flex items-center gap-1.5 pb-2 px-2.5 transition-colors relative ${
             activeTab === 'community-topics'
               ? 'text-brand-primary'
               : 'text-text-secondary hover:text-brand-ink'
           }`}
         >
-          <Globe className="w-4 h-4 text-emerald-600" />
+          <Globe className="w-3.5 h-3.5 text-emerald-600" />
           <span>Khám phá cộng đồng (Public Topics)</span>
-          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
             Chia sẻ
           </span>
           {activeTab === 'community-topics' && (

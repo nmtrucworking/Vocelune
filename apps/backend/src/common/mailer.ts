@@ -12,17 +12,40 @@ export interface SendMailOptions {
   from?: string;
 }
 
+function sanitizeResendFrom(raw?: string): string {
+  if (!raw) return 'Vocelune <onboarding@resend.dev>';
+  const str = raw.trim().replace(/^["']|["']$/g, '').trim();
+
+  // If malformed, missing @ or contains local domains, fallback safely
+  if (!str.includes('@') || str.includes('vocelune.local') || str.includes('localhost')) {
+    return 'Vocelune <onboarding@resend.dev>';
+  }
+
+  // Match "Display Name <email@domain.com>"
+  const nameEmailMatch = str.match(/^(.+?)\s*<([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)>$/);
+  if (nameEmailMatch) {
+    const name = nameEmailMatch[1].replace(/["']/g, '').trim();
+    const email = nameEmailMatch[2].trim();
+    return `${name || 'Vocelune'} <${email}>`;
+  }
+
+  // Match bare email "email@domain.com"
+  const bareEmailMatch = str.match(/^([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)$/);
+  if (bareEmailMatch) {
+    return `Vocelune <${bareEmailMatch[1]}>`;
+  }
+
+  return 'Vocelune <onboarding@resend.dev>';
+}
+
 export async function sendEmailDirect(options: SendMailOptions): Promise<{ success: boolean; messageId?: string }> {
   const rawKey = config.RESEND_API_KEY || (config.SMTP_PASSWORD?.startsWith('re_') ? config.SMTP_PASSWORD : undefined) || process.env.RESEND_API_KEY;
   const resendApiKey = rawKey ? rawKey.trim() : undefined;
 
   // 1. Resend REST API Mode (Preferred if Resend key is provided)
   if (resendApiKey) {
-    // If SMTP_FROM contains vocelune.local or is invalid, use Resend's default verified test sender
-    let from = options.from || config.RESEND_FROM || config.SMTP_FROM;
-    if (!from || from.includes('vocelune.local') || from.includes('localhost')) {
-      from = 'Vocelune <onboarding@resend.dev>';
-    }
+    const rawFrom = options.from || config.RESEND_FROM || config.SMTP_FROM;
+    const from = sanitizeResendFrom(rawFrom);
 
     logger.log(`Dispatching email to ${options.to} via Resend REST API (From: "${from}", Subject: "${options.subject}")...`);
 

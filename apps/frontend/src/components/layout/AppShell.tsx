@@ -69,7 +69,7 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
       {/* Desktop Sidebar */}
       <div
         className={`hidden md:block shrink-0 h-screen sticky top-0 transition-all duration-200 ${
-          sidebarCollapsed ? 'w-18' : 'w-60'
+          sidebarCollapsed ? 'w-14' : 'w-52'
         }`}
       >
         <Sidebar
@@ -85,7 +85,7 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
             className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs"
             onClick={() => setMobileSidebarOpen(false)}
           />
-          <div className="relative w-72 max-w-[85vw] h-full bg-surface-base shadow-xl z-50">
+          <div className="relative w-64 max-w-[85vw] h-full bg-surface-base shadow-xl z-50">
             <Sidebar onCloseMobile={() => setMobileSidebarOpen(false)} />
           </div>
         </div>
@@ -101,7 +101,7 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
           onToggleSidebar={handleToggleSidebar}
         />
 
-        <main className="flex-1 p-3.5 md:p-6 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-3 md:p-4.5 max-w-6xl w-full mx-auto">
           {children}
         </main>
       </div>

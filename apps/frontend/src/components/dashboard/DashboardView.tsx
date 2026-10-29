@@ -167,24 +167,24 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
       variants={containerVariants}
       initial="hidden"
       animate="show"
-      className="space-y-8 max-w-6xl mx-auto"
+      className="space-y-5 max-w-6xl mx-auto"
     >
       {/* Top Hero Banner */}
       <motion.div
         variants={itemVariants}
-        className="bg-gradient-to-r from-brand-ink to-[#253258] text-white rounded-card p-6 md:p-8 shadow-elevated relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6"
+        className="bg-gradient-to-r from-brand-ink to-[#253258] text-white rounded-card p-4 sm:p-5 md:p-6 shadow-elevated relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
       >
         {/* Subtle decorative orbit */}
         <div className="absolute right-[-40px] top-[-40px] w-72 h-72 rounded-full border border-white/10 pointer-events-none" />
         <div className="absolute right-12 bottom-[-80px] w-96 h-96 rounded-full border border-white/5 pointer-events-none" />
 
-        <div className="space-y-2 relative z-10 max-w-xl">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 backdrop-blur-xs text-[11px] font-medium text-brand-mint">
-            <Sparkles className="w-3.5 h-3.5" />
+        <div className="space-y-1.5 relative z-10 max-w-xl">
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/10 backdrop-blur-xs text-[10px] font-medium text-brand-mint">
+            <Sparkles className="w-3 h-3" />
             <span>Mỗi từ, một nhịp nhớ.</span>
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
             Chào {settings.displayName}, hôm nay bạn có{' '}
             <span className="text-brand-primarySoft underline decoration-brand-primary">
               {dueCount} thẻ
@@ -192,24 +192,24 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
             đến hạn.
           </h2>
 
-          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+          <p className="text-xs text-slate-300 leading-relaxed">
             Thuật toán FSRS đã tính toán thời điểm vàng để bạn củng cố các từ này trước khi rơi vào vùng lãng quên.
           </p>
         </div>
 
-        <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+        <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto">
           {dueCount > 0 ? (
             <Link
               href="/study"
-              className="px-6 py-3 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control font-bold text-xs sm:text-sm shadow-md transition-all duration-150 flex items-center justify-center gap-2 group text-center active:scale-95"
+              className="px-4 py-2.5 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control font-bold text-xs shadow-md transition-all duration-150 flex items-center justify-center gap-1.5 group text-center active:scale-95"
             >
               <span>Ôn tập ngay ({dueCount} thẻ)</span>
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
             </Link>
           ) : (
             <Link
               href="/study"
-              className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-control font-semibold text-xs sm:text-sm transition-all duration-150 text-center"
+              className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-control font-semibold text-xs transition-all duration-150 text-center"
             >
               Luyện tập tự do
             </Link>
@@ -217,87 +217,87 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
 
           <button
             onClick={onOpenQuickAdd}
-            className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-control font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 active:scale-95"
+            className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-control font-semibold text-xs transition-all flex items-center justify-center gap-1 active:scale-95"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             <span>Thêm từ</span>
           </button>
         </div>
       </motion.div>
 
       {/* KPI Overview Grid */}
-      <motion.div variants={itemVariants} className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <motion.div variants={itemVariants} className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {/* KPI 1 */}
         <motion.div
-          whileHover={{ y: -3 }}
-          className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1 transition-all"
+          whileHover={{ y: -2 }}
+          className="bg-surface-base p-3.5 sm:p-4 rounded-card border border-slate-200/80 shadow-2xs space-y-1 transition-all"
         >
           <div className="flex items-center justify-between text-xs text-text-secondary font-medium">
             <span>Cần ôn hôm nay</span>
-            <Brain className="w-4 h-4 text-brand-primary" />
+            <Brain className="w-3.5 h-3.5 text-brand-primary" />
           </div>
-          <div className="flex items-baseline gap-1.5 pt-1">
-            <span className="text-3xl font-extrabold text-brand-ink">{dueCount}</span>
+          <div className="flex items-baseline gap-1.5 pt-0.5">
+            <span className="text-2xl font-bold text-brand-ink">{dueCount}</span>
             <span className="text-xs text-text-secondary">thẻ FSRS</span>
           </div>
-          <p className="text-[11px] text-text-secondary">
+          <p className="text-[10px] text-text-secondary">
             Đã hoàn thành hôm nay: <strong>{todayReviewsCount}</strong>
           </p>
         </motion.div>
 
         {/* KPI 2 */}
         <motion.div
-          whileHover={{ y: -3 }}
-          className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1 transition-all"
+          whileHover={{ y: -2 }}
+          className="bg-surface-base p-3.5 sm:p-4 rounded-card border border-slate-200/80 shadow-2xs space-y-1 transition-all"
         >
           <div className="flex items-center justify-between text-xs text-text-secondary font-medium">
             <span>Chuỗi ngày học</span>
-            <Flame className="w-4 h-4 text-amber-500 fill-amber-500" />
+            <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
           </div>
-          <div className="flex items-baseline gap-1.5 pt-1">
-            <span className="text-3xl font-extrabold text-brand-ink">{streak}</span>
+          <div className="flex items-baseline gap-1.5 pt-0.5">
+            <span className="text-2xl font-bold text-brand-ink">{streak}</span>
             <span className="text-xs text-text-secondary">ngày</span>
           </div>
-          <p className="text-[11px] text-amber-800 font-medium">
+          <p className="text-[10px] text-amber-800 font-medium">
             Đang giữ lửa phong độ
           </p>
         </motion.div>
 
         {/* KPI 3 */}
         <motion.div
-          whileHover={{ y: -3 }}
-          className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1 transition-all"
+          whileHover={{ y: -2 }}
+          className="bg-surface-base p-3.5 sm:p-4 rounded-card border border-slate-200/80 shadow-2xs space-y-1 transition-all"
         >
           <div className="flex items-center justify-between text-xs text-text-secondary font-medium">
             <span>Tỷ lệ nhớ thực tế</span>
-            <TrendingUp className="w-4 h-4 text-emerald-600" />
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
           </div>
-          <div className="flex items-baseline gap-1.5 pt-1">
-            <span className="text-3xl font-extrabold text-brand-ink">
+          <div className="flex items-baseline gap-1.5 pt-0.5">
+            <span className="text-2xl font-bold text-brand-ink">
               {observedRetention === null ? 'Chưa có dữ liệu' : `${observedRetention}%`}
             </span>
           </div>
-          <p className="text-[11px] text-emerald-700 font-medium">
+          <p className="text-[10px] text-emerald-700 font-medium">
             Chỉ tính lượt ôn ở trạng thái Review
           </p>
         </motion.div>
 
         {/* KPI 4 */}
         <motion.div
-          whileHover={{ y: -3 }}
-          className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-1 transition-all"
+          whileHover={{ y: -2 }}
+          className="bg-surface-base p-3.5 sm:p-4 rounded-card border border-slate-200/80 shadow-2xs space-y-1 transition-all"
         >
           <div className="flex items-center justify-between text-xs text-text-secondary font-medium">
             <span>Kho từ vựng</span>
-            <BookOpen className="w-4 h-4 text-brand-primary" />
+            <BookOpen className="w-3.5 h-3.5 text-brand-primary" />
           </div>
-          <div className="flex items-baseline gap-1.5 pt-1">
-            <span className="text-3xl font-extrabold text-brand-ink">
+          <div className="flex items-baseline gap-1.5 pt-0.5">
+            <span className="text-2xl font-bold text-brand-ink">
               {vocabItems.length}
             </span>
             <span className="text-xs text-text-secondary">từ đã lưu</span>
           </div>
-          <p className="text-[11px] text-text-secondary">
+          <p className="text-[10px] text-text-secondary">
             {decks.length} bộ từ đang hoạt động
           </p>
         </motion.div>
@@ -327,17 +327,17 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Chart 1: Forecast / Activity Area Chart (2 cols) */}
-          <div className="lg:col-span-2 bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
+          <div className="lg:col-span-2 bg-surface-base p-3.5 sm:p-4 rounded-card border border-slate-200/80 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => setChartView('forecast')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
                     chartView === 'forecast'
-                      ? 'bg-brand-primary text-white shadow-xs'
+                      ? 'bg-brand-primary text-white shadow-2xs'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
@@ -346,22 +346,22 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
                 <button
                   type="button"
                   onClick={() => setChartView('activity')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
                     chartView === 'activity'
-                      ? 'bg-brand-primary text-white shadow-xs'
+                      ? 'bg-brand-primary text-white shadow-2xs'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  Lượt ôn tập 7 ngày qua
+                  Lượt ôn 7 ngày qua
                 </button>
               </div>
 
-              <span className="text-[11px] font-mono font-medium text-text-secondary hidden sm:inline">
+              <span className="text-[10px] font-mono font-medium text-text-secondary hidden sm:inline">
                 {chartView === 'forecast' ? 'FSRS Retention Engine' : 'Nhịp học hàng ngày'}
               </span>
             </div>
 
-            <div className="h-64 w-full">
+            <div className="h-52 w-full">
               {isMounted ? (
                 chartView === 'forecast' ? (
                   <ResponsiveContainer width="100%" height="100%">
