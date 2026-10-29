@@ -112,16 +112,25 @@ export function TopicManager({
   const { deckWordCount, deckDueCount } = useMemo(() => {
     const wordCount = new Map<string, number>();
     for (const item of vocabItems) {
-      wordCount.set(item.deckId, (wordCount.get(item.deckId) || 0) + 1);
+      const dIds: string[] = (item as any).deckIds?.length ? (item as any).deckIds : [item.deckId];
+      for (const dId of dIds) {
+        if (dId) wordCount.set(dId, (wordCount.get(dId) || 0) + 1);
+      }
     }
 
     const dueCount = new Map<string, number>();
-    const vocabDeckMap = new Map(vocabItems.map((v) => [v.id, v.deckId]));
+    const vocabDeckMap = new Map<string, string[]>();
+    for (const item of vocabItems) {
+      const dIds: string[] = (item as any).deckIds?.length ? (item as any).deckIds : [item.deckId];
+      vocabDeckMap.set(item.id, dIds);
+    }
 
     for (const card of dueCards) {
-      const deckId = vocabDeckMap.get(card.vocabItemId);
-      if (deckId) {
-        dueCount.set(deckId, (dueCount.get(deckId) || 0) + 1);
+      const deckIds = vocabDeckMap.get(card.vocabItemId) || [];
+      for (const deckId of deckIds) {
+        if (deckId) {
+          dueCount.set(deckId, (dueCount.get(deckId) || 0) + 1);
+        }
       }
     }
 

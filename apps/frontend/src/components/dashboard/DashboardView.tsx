@@ -93,20 +93,25 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
     }
     const days: { day: string; cards: number }[] = [];
     const now = new Date();
+    const newCardsTotal = cards.filter((c) => !c.suspended && c.state === 'new').length;
+    let pool = newCardsTotal;
     for (let i = 0; i < 7; i++) {
       const d = new Date(now);
       d.setDate(d.getDate() + i);
       const dayStr = i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : `+${i}d`;
       const dateStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
       const dateEnd = dateStart + 24 * 60 * 60 * 1000;
-      const count = cards.filter((c) => {
+      const dueReviews = cards.filter((c) => {
+        if (c.suspended || c.state === 'new') return false;
         const due = new Date(c.dueAt).getTime();
         return i === 0 ? due <= dateEnd : due >= dateStart && due < dateEnd;
       }).length;
-      days.push({ day: dayStr, cards: count });
+      const newForDay = Math.min(pool, settings.newCardsPerDay || 20);
+      pool = Math.max(0, pool - newForDay);
+      days.push({ day: dayStr, cards: dueReviews + newForDay });
     }
     return days;
-  }, [analytics?.forecastData, cards]);
+  }, [analytics?.forecastData, cards, settings.newCardsPerDay]);
 
   // 2. Memory State Distribution (Donut Chart)
   const stateDistributionData = useMemo(() => {

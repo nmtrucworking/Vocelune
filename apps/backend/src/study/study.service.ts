@@ -49,7 +49,17 @@ export class StudyService {
       await this.checkReviewable(tx, userId, card, new Date(), true);
       const token = await tx.reveal.create({ data: { sessionId, cardId, cardVersion: card.version, expiresAt: new Date(Date.now() + 5 * 60000) } });
       const scheduler = await tx.schedulerConfig.findFirstOrThrow({ where: { userId }, orderBy: { version: 'desc' } });
-      return { revealId: token.id, cardVersion: card.version, previews: ([1, 2, 3, 4] as const).map(rating => ({ rating, dueAt: review(card, rating, new Date(), scheduler.retention).dueAt })) };
+      const weights = Array.isArray(scheduler.parameters)
+        ? (scheduler.parameters as number[])
+        : (scheduler.parameters as any)?.w;
+      return {
+        revealId: token.id,
+        cardVersion: card.version,
+        previews: ([1, 2, 3, 4] as const).map(rating => ({
+          rating,
+          dueAt: review(card, rating, new Date(), scheduler.retention, weights).dueAt,
+        })),
+      };
     });
   }
   private async checkReviewable(tx: Tx, userId: string, card: Card, now: Date, allowAhead = true) {
@@ -85,7 +95,10 @@ export class StudyService {
   }
   async recordInTx(tx: Tx, userId: string, card: Card, rating: 1 | 2 | 3 | 4, key: string, requestHash: string, durationMs: number, source: string, now: Date, sessionId?: string) {
     const scheduler = await tx.schedulerConfig.findFirstOrThrow({ where: { userId }, orderBy: { version: 'desc' } });
-    const next = review(card, rating, now, scheduler.retention);
+    const weights = Array.isArray(scheduler.parameters)
+      ? (scheduler.parameters as number[])
+      : (scheduler.parameters as any)?.w;
+    const next = review(card, rating, now, scheduler.retention, weights);
     const updated = await tx.card.update({ where: { id: card.id }, data: { ...next, version: { increment: 1 }, schedulerConfigId: scheduler.id } });
     const siblings = await tx.card.findMany({ where: { userId, vocabItemId: card.vocabItemId, id: { not: card.id }, state: { in: ['new', 'review'] }, deletedAt: null }, select: { id: true, buriedUntil: true, version: true } });
     const reviewId = crypto.randomUUID();

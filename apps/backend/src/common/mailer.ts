@@ -16,8 +16,17 @@ function sanitizeResendFrom(raw?: string): string {
   if (!raw) return 'Vocelune <onboarding@resend.dev>';
   const str = raw.trim().replace(/^["']|["']$/g, '').trim();
 
-  // If malformed, missing @ or contains local domains, fallback safely
-  if (!str.includes('@') || str.includes('vocelune.local') || str.includes('localhost')) {
+  // If malformed, missing @ or contains local domains or free webmail domains that Resend strictly blocks
+  const lower = str.toLowerCase();
+  if (
+    !lower.includes('@') ||
+    lower.includes('vocelune.local') ||
+    lower.includes('localhost') ||
+    lower.includes('@gmail.com') ||
+    lower.includes('@yahoo.com') ||
+    lower.includes('@hotmail.com') ||
+    lower.includes('@outlook.com')
+  ) {
     return 'Vocelune <onboarding@resend.dev>';
   }
 
@@ -45,31 +54,45 @@ export async function sendEmailDirect(options: SendMailOptions): Promise<{ succe
   // 1. Resend REST API Mode (Preferred if Resend key is provided)
   if (resendApiKey) {
     const rawFrom = options.from || config.RESEND_FROM || config.SMTP_FROM;
-    const from = sanitizeResendFrom(rawFrom);
+    let from = sanitizeResendFrom(rawFrom);
 
     logger.log(`Dispatching email to ${options.to} via Resend REST API (From: "${from}", Subject: "${options.subject}")...`);
 
-    const payload: Record<string, unknown> = {
-      from,
-      to: [options.to],
-      subject: options.subject,
-      text: options.text,
+    const sendViaResend = async (sender: string) => {
+      const payload: Record<string, unknown> = {
+        from: sender,
+        to: [options.to],
+        subject: options.subject,
+        text: options.text,
+      };
+      if (options.html) payload.html = options.html;
+
+      return fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
     };
-    if (options.html) payload.html = options.html;
 
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    let res = await sendViaResend(from);
+    let resData = (await res.json().catch(() => null)) as { id?: string; message?: string; name?: string; statusCode?: number } | null;
 
-    const resData = (await res.json().catch(() => null)) as { id?: string; message?: string; name?: string; statusCode?: number } | null;
+    // Auto-retry with onboarding@resend.dev if custom sender failed validation (422)
+    if (!res.ok && res.status === 422 && from !== 'Vocelune <onboarding@resend.dev>') {
+      logger.warn(`Resend API rejected sender "${from}" (${resData?.message}). Retrying with "Vocelune <onboarding@resend.dev>"...`);
+      from = 'Vocelune <onboarding@resend.dev>';
+      res = await sendViaResend(from);
+      resData = (await res.json().catch(() => null)) as { id?: string; message?: string; name?: string; statusCode?: number } | null;
+    }
 
     if (!res.ok) {
-      const errMsg = resData?.message || JSON.stringify(resData) || `HTTP status ${res.status}`;
+      let errMsg = resData?.message || JSON.stringify(resData) || `HTTP status ${res.status}`;
+      if (errMsg.includes('only send testing emails to your own email address')) {
+        errMsg = `${errMsg} (Tài khoản Resend miễn phí chỉ cho phép gửi tới email đăng ký tài khoản Resend. Để gửi cho mọi email, vui lòng Verify Domain trong Resend Dashboard).`;
+      }
       logger.error(`Resend API call failed (${res.status}): ${errMsg}`);
       throw new Error(`Lỗi Resend API (${res.status}): ${errMsg}`);
     }

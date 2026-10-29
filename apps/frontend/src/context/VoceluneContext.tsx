@@ -161,24 +161,55 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
     try { await promise; } catch (e) { reveals.current.delete(cardId); setError(e instanceof Error ? e.message : 'Không thể mở đáp án.'); throw e; }
   }, []);
   const gradeCard = useCallback(async (cardId: string, rating: FSRSRating, durationMs = 4000) => {
-    await perform(async () => {
-      let pending = pendingReviews.current.get(cardId);
-      if (!pending) {
-        const revealed = await reveals.current.get(cardId);
-        const activeSession = await session.current;
-        if (!revealed || !activeSession) throw new Error('Hãy mở đáp án trước khi đánh giá.');
-        pending = { key: crypto.randomUUID(), body: { sessionId: activeSession.id, revealId: revealed.revealId, expectedCardVersion: revealed.cardVersion, rating, responseTimeMs: Math.min(300000, Math.max(0, durationMs)) } };
-        pendingReviews.current.set(cardId, pending);
-      }
-      try {
-        const result = await post<{ reviewId: string }>(`/cards/${cardId}/reviews`, pending.body, { 'Idempotency-Key': pending.key });
-        setLastReview({ id: result.reviewId, at: Date.now() }); reveals.current.delete(cardId); pendingReviews.current.delete(cardId);
-      } catch (e) {
-        if (e instanceof ApiError && e.status < 500) { pendingReviews.current.delete(cardId); reveals.current.delete(cardId); }
-        throw e;
-      }
+    let pending = pendingReviews.current.get(cardId);
+    if (!pending) {
+      const revealed = await reveals.current.get(cardId);
+      const activeSession = await session.current;
+      if (!revealed || !activeSession) throw new Error('Hãy mở đáp án trước khi đánh giá.');
+      pending = {
+        key: crypto.randomUUID(),
+        body: {
+          sessionId: activeSession.id,
+          revealId: revealed.revealId,
+          expectedCardVersion: revealed.cardVersion,
+          rating,
+          responseTimeMs: Math.min(300000, Math.max(0, durationMs)),
+        },
+      };
+      pendingReviews.current.set(cardId, pending);
+    }
+
+    // Optimistically update snapshot in local state immediately (0ms)
+    setSnapshot((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        dueCards: prev.dueCards.filter((c) => c.id !== cardId),
+        overview: prev.overview
+          ? {
+              ...prev.overview,
+              todayReviewsCount: prev.overview.todayReviewsCount + 1,
+            }
+          : prev.overview,
+      };
     });
-  }, [perform]);
+
+    try {
+      const result = await post<{ reviewId: string }>(`/cards/${cardId}/reviews`, pending.body, {
+        'Idempotency-Key': pending.key,
+      });
+      setLastReview({ id: result.reviewId, at: Date.now() });
+      reveals.current.delete(cardId);
+      pendingReviews.current.delete(cardId);
+    } catch (e) {
+      if (e instanceof ApiError && e.status < 500) {
+        pendingReviews.current.delete(cardId);
+        reveals.current.delete(cardId);
+      }
+      void refresh().catch(() => {});
+      throw e;
+    }
+  }, [post, refresh]);
   const undoLastReview = useCallback(async () => {
     if (!lastReview) return false;
     await perform(() => post(`/reviews/${lastReview.id}/undo`)); setLastReview(null); reveals.current.clear(); return true;

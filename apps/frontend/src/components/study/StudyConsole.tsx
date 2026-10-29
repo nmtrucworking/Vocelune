@@ -18,8 +18,10 @@ import {
   Layers,
   Zap,
   Clock,
+  Loader2,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
+import { useNotification } from '@/context/NotificationContext';
 import { Card, VocabItem, FSRSRating, StudyMode } from '@/types';
 import { getFSRSPreviews, IntervalPreview } from '@/lib/fsrs-engine';
 import { speakWord } from '@/lib/speech';
@@ -29,12 +31,14 @@ import { AudioButton } from '../common/AudioButton';
 export type StudyScope = 'due' | 'ahead' | 'all';
 
 export function StudyConsole() {
-  const { dueCards, vocabItems, decks, gradeCard, undoLastReview, canUndo, settings, revealCard, cards } =
+  const { dueCards, vocabItems, decks, gradeCard, undoLastReview, canUndo, settings, revealCard, cards, refresh } =
     useVocelune();
+  const { notify } = useNotification();
 
   const [studyScope, setStudyScope] = useState<StudyScope>('due');
   const [selectedTopicGroup, setSelectedTopicGroup] = useState<string>('all');
   const [selectedDeckId, setSelectedDeckId] = useState<string>('all');
+  const [isGrading, setIsGrading] = useState(false);
 
   const availableGroups = useMemo(() => {
     const set = new Set<string>();
@@ -44,34 +48,9 @@ export function StudyConsole() {
 
   const deckMap = useMemo(() => new Map(decks.map((d) => [d.id, d])), [decks]);
 
-  const dueIdSet = useMemo(() => new Set(dueCards.map((c) => c.id)), [dueCards]);
-
-  const scopeStats = useMemo(() => {
-    let ahead = 0;
-    for (const c of cards) {
-      if (c.suspended) continue;
-      if (!dueIdSet.has(c.id)) {
-        ahead++;
-      }
-    }
-    return {
-      due: dueCards.length,
-      ahead,
-      all: dueCards.length + ahead,
-    };
-  }, [dueCards, cards, dueIdSet]);
-
-  const candidateCards = useMemo(() => {
-    let pool: Card[] = [];
-    if (studyScope === 'due') {
-      pool = dueCards;
-    } else if (studyScope === 'ahead') {
-      pool = cards.filter((c) => !c.suspended && !dueIdSet.has(c.id));
-    } else {
-      pool = cards.filter((c) => !c.suspended);
-    }
-
-    return pool.filter((card) => {
+  const scopedCards = useMemo(() => {
+    return cards.filter((card) => {
+      if (card.suspended) return false;
       const vocab = vocabItems.find((v) => v.id === card.vocabItemId);
       if (!vocab) return false;
       if (selectedDeckId !== 'all' && vocab.deckId !== selectedDeckId) return false;
@@ -81,7 +60,37 @@ export function StudyConsole() {
       }
       return true;
     });
-  }, [dueCards, cards, dueIdSet, studyScope, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
+  }, [cards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
+
+  const scopedDueCards = useMemo(() => {
+    return dueCards.filter((card) => {
+      const vocab = vocabItems.find((v) => v.id === card.vocabItemId);
+      if (!vocab) return false;
+      if (selectedDeckId !== 'all' && vocab.deckId !== selectedDeckId) return false;
+      if (selectedTopicGroup !== 'all') {
+        const d = deckMap.get(vocab.deckId);
+        if ((d?.topicGroup || 'Chung') !== selectedTopicGroup) return false;
+      }
+      return true;
+    });
+  }, [dueCards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
+
+  const dueIdSet = useMemo(() => new Set(scopedDueCards.map((c) => c.id)), [scopedDueCards]);
+
+  const scopeStats = useMemo(() => {
+    const ahead = scopedCards.filter((c) => !dueIdSet.has(c.id)).length;
+    return {
+      due: scopedDueCards.length,
+      ahead,
+      all: scopedCards.length,
+    };
+  }, [scopedDueCards, scopedCards, dueIdSet]);
+
+  const candidateCards = useMemo(() => {
+    if (studyScope === 'due') return scopedDueCards;
+    if (studyScope === 'ahead') return scopedCards.filter((c) => !dueIdSet.has(c.id));
+    return scopedCards;
+  }, [studyScope, scopedDueCards, scopedCards, dueIdSet]);
 
   const grading = useRef(false);
   const [revealReady, setRevealReady] = useState(false);
@@ -170,16 +179,17 @@ export function StudyConsole() {
     }
   }, [isFlipped, settings.autoPronounce, currentVocab, settings.englishDialect]);
 
-  // Grade action (FSRS rating 1-4)
+  // Grade action (FSRS rating 1-4) with Optimistic UI for zero latency
   const handleGrade = useCallback(
-    async (rating: FSRSRating) => {
+    (rating: FSRSRating) => {
       if (!currentCard || !revealReady || grading.current) return;
       grading.current = true;
+      setIsGrading(true);
 
       const durationMs = Date.now() - startTime;
-      try { await gradeCard(currentCard.id, rating, durationMs); } catch { grading.current = false; return; }
-      grading.current = false;
+      const cardToGrade = currentCard;
 
+      // 1. Optimistic UI update: Advance card immediately with zero delay (0ms)
       setCompletedCount((prev) => prev + 1);
       setSlideDirection(1);
       setIsFlipped(false);
@@ -188,16 +198,25 @@ export function StudyConsole() {
       setSelectedOption(null);
       setStartTime(Date.now());
 
-      // Move to next card
       if (currentIndex < queue.length - 1) {
         setCurrentIndex((prev) => prev + 1);
       } else {
-        // Queue finished -> trigger celebratory confetti!
         setCurrentIndex(queue.length);
         triggerConfetti();
+        void refresh().catch(() => {});
       }
+
+      // 2. Dispatch grade in the background asynchronously
+      gradeCard(cardToGrade.id, rating, durationMs)
+        .catch((err) => {
+          notify.error('Lỗi đồng bộ ôn tập', (err as Error).message || 'Không thể lưu lượt ôn lên máy chủ.');
+        })
+        .finally(() => {
+          grading.current = false;
+          setIsGrading(false);
+        });
     },
-    [currentCard, revealReady, startTime, gradeCard, currentIndex, queue.length]
+    [currentCard, revealReady, startTime, gradeCard, currentIndex, queue.length, refresh, notify]
   );
 
   const handleUndo = useCallback(async () => {
@@ -1022,11 +1041,11 @@ export function StudyConsole() {
                           key={preview.rating}
                           whileHover={{ scale: 1.03 }}
                           whileTap={{ scale: 0.96 }}
-                          disabled={!revealReady}
-                          onClick={() => void handleGrade(preview.rating)}
+                          disabled={!revealReady || isGrading}
+                          onClick={() => handleGrade(preview.rating)}
                           className={`p-2.5 rounded-control border border-slate-200 text-left transition-all shadow-xs flex flex-col justify-between ${
                             ratingStyles[preview.rating]
-                          }`}
+                          } ${!revealReady || isGrading ? 'opacity-60 cursor-not-allowed' : ''}`}
                         >
                           <div className="flex items-center justify-between">
                             <span className="font-bold text-xs">{preview.label}</span>

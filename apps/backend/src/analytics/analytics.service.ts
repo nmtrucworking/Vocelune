@@ -31,7 +31,9 @@ export class AnalyticsService {
     if (!daily.has(d.toISODate()!)) d = d.minus({ days: 1 });
     while (daily.has(d.toISODate()!)) { streak++; d = d.minus({ days: 1 }); }
     const reviewLogs = logs.filter(l => l.beforeState === 'review');
-    const success = reviewLogs.filter(l => l.rating >= 3).length;
+    // In official FSRS: Rating 1 (Again) is recall failure. Rating 2 (Hard), 3 (Good), 4 (Easy) are successful recall.
+    const successfulRecall = reviewLogs.filter(l => l.rating >= 2).length;
+    const goodOrEasy = reviewLogs.filter(l => l.rating >= 3).length;
     const queue = await this.study.queue(userId);
     const cards = await this.db.card.findMany({ where: { userId, deletedAt: null, vocabItem: { deletedAt: null } }, include: { vocabItem: { include: { decks: true } } } });
     const weak = new Map<string, { vocab: ReturnType<typeof vocabDto>; lapses: number; reps: number }>();
@@ -74,10 +76,22 @@ export class AnalyticsService {
       };
     });
     const testCount = await this.db.testAttempt.count({ where: { userId, status: { not: 'in_progress' } } });
-    return { forecastData, forgettingCurveData, averageStability: scored.length ? scored.reduce((sum, c) => sum + c.stability, 0) / scored.length : 0, streak, observedRetention: reviewLogs.length ? Math.round(100 * success / reviewLogs.length) : null, sampleSize: reviewLogs.length,
-      todayReviewsCount: daily.get(today)?.count || 0, activityHeatmap, weakWords: [...weak.values()].sort((a, b) => b.lapses - a.lapses).slice(0, 5), dueCount: queue.counts.due, newAvailable: queue.cards.filter(c => c.state === 'new').length,
+    return {
+      forecastData,
+      forgettingCurveData,
+      averageStability: scored.length ? scored.reduce((sum, c) => sum + c.stability, 0) / scored.length : 0,
+      streak,
+      observedRetention: reviewLogs.length ? Math.round(100 * successfulRecall / reviewLogs.length) : null,
+      goodEasyRate: reviewLogs.length ? Math.round(100 * goodOrEasy / reviewLogs.length) : null,
+      sampleSize: reviewLogs.length,
+      todayReviewsCount: daily.get(today)?.count || 0,
+      activityHeatmap,
+      weakWords: [...weak.values()].sort((a, b) => b.lapses - a.lapses).slice(0, 5),
+      dueCount: queue.counts.due,
+      newAvailable: queue.cards.filter(c => c.state === 'new').length,
       counts: { vocabulary: await this.db.vocabItem.count({ where: { userId, deletedAt: null } }), cards: cards.length, tests: testCount, reviews: logs.length },
-      metadata: { calculationVersion: 1, successPolicy: 'rating>=3; state_before=review; source=srs_study; voided excluded', sampleSize: reviewLogs.length, timezone: settings.timezone, dayStartHour: settings.dayStartHour, timezonePolicy: 'recompute_history_in_current_profile_timezone', dateRange: { start, end: now }, updatedAt: now } };
+      metadata: { calculationVersion: 2, successPolicy: 'rating>=2 (successful recall); rating>=3 (good/easy); state_before=review; source=srs_study; voided excluded', sampleSize: reviewLogs.length, timezone: settings.timezone, dayStartHour: settings.dayStartHour, timezonePolicy: 'recompute_history_in_current_profile_timezone', dateRange: { start, end: now }, updatedAt: now }
+    };
   }
   async bootstrap(userId: string) {
     const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, include: { settings: true, avatarAsset: true } });

@@ -5,9 +5,17 @@ import { createEmptyCard, fsrs, generatorParameters, State, Rating, type Card as
 export const MODEL_VERSION = 'FSRS-6';
 export const LIBRARY_VERSION = '5.4.2';
 export const states = ['new', 'learning', 'review', 'relearning'] as const;
-export const parameters = (retention: number) => generatorParameters({ request_retention: retention, enable_fuzz: false, learning_steps: ['1m', '10m'], relearning_steps: ['10m'] });
-export function review(card: Card, rating: 1 | 2 | 3 | 4, now: Date, retention: number) {
-  const engine = fsrs(parameters(retention));
+export const parameters = (retention: number, customWeights?: number[]) =>
+  generatorParameters({
+    request_retention: retention,
+    ...(Array.isArray(customWeights) && customWeights.length > 0 ? { w: customWeights } : {}),
+    enable_fuzz: false,
+    learning_steps: ['1m', '10m'],
+    relearning_steps: ['10m'],
+  });
+
+export function review(card: Card, rating: 1 | 2 | 3 | 4, now: Date, retention: number, customWeights?: number[]) {
+  const engine = fsrs(parameters(retention, customWeights));
   const previous: EngineCard = {
     ...createEmptyCard(now), due: card.dueAt, stability: card.stability, difficulty: card.difficulty,
     elapsed_days: card.elapsedDays, scheduled_days: card.scheduledDays, learning_steps: card.learningSteps,

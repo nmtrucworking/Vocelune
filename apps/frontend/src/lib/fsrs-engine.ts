@@ -106,10 +106,10 @@ export function getFSRSPreviews(card: Card, desiredRetention: number = 0.9): Int
   const repeated = f.repeat(fCard, now);
 
   const meta = [
-    { rating: 1 as FSRSRating, label: 'Again', desc: 'Chưa nhớ / Quên' },
-    { rating: 2 as FSRSRating, label: 'Hard', desc: 'Khó khăn khi nhớ' },
-    { rating: 3 as FSRSRating, label: 'Good', desc: 'Nhớ sau gợi ý' },
-    { rating: 4 as FSRSRating, label: 'Easy', desc: 'Nhớ tức thì & rất dễ' },
+    { rating: 1 as FSRSRating, label: 'Again', desc: 'Quên hoàn toàn' },
+    { rating: 2 as FSRSRating, label: 'Hard', desc: 'Nhớ khó khăn' },
+    { rating: 3 as FSRSRating, label: 'Good', desc: 'Nhớ chuẩn' },
+    { rating: 4 as FSRSRating, label: 'Easy', desc: 'Rất dễ' },
   ];
 
   return meta.map((m) => {
