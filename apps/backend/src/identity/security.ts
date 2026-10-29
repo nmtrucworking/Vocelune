@@ -4,7 +4,7 @@ import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Database } from '../common/db';
 import { AuthRequest, fail } from '../common/http';
-import { config, getAllowedOrigins } from '../common/config';
+import { config, getAllowedOrigins, isOriginAllowed } from '../common/config';
 
 export const Public = () => SetMetadata('public', true);
 export const secret = () => randomBytes(32).toString('base64url');
@@ -36,7 +36,7 @@ export class SessionGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<AuthRequest>();
     const publicRoute = this.reflector.getAllAndOverride<boolean>('public', [context.getHandler(), context.getClass()]);
     const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
-    if (mutating && req.headers.origin && !getAllowedOrigins().includes(req.headers.origin)) {
+    if (mutating && req.headers.origin && !isOriginAllowed(req.headers.origin)) {
       fail(403, 'ORIGIN_DENIED', 'Nguồn yêu cầu không được phép.');
     }
     if (publicRoute || req.method === 'OPTIONS') return true;

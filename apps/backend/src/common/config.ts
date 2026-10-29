@@ -6,7 +6,7 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   DATABASE_URL: z.string().url(),
-  APP_ORIGIN: z.string().url().default('http://localhost:3000'),
+  APP_ORIGIN: z.string().url().optional(),
   ALLOWED_ORIGINS: z.string().optional(),
   COOKIE_DOMAIN: z.string().optional(),
   SESSION_DAYS: z.coerce.number().int().min(1).max(90).default(30),
@@ -50,14 +50,38 @@ export const config = schema.parse(process.env);
 
 export function getAllowedOrigins(): string[] {
   const origins = new Set<string>();
-  if (config.APP_ORIGIN) origins.add(config.APP_ORIGIN.replace(/\/+$/, ''));
+  const defaultOrigin = config.NODE_ENV === 'production'
+    ? 'https://vocelune.nguyenminhtruc.site'
+    : 'http://localhost:3000';
+  origins.add((config.APP_ORIGIN || defaultOrigin).replace(/\/+$/, ''));
   if (config.ALLOWED_ORIGINS) {
     config.ALLOWED_ORIGINS.split(',')
       .map(s => s.trim().replace(/\/+$/, ''))
       .filter(Boolean)
       .forEach(o => origins.add(o));
   }
+  origins.add('https://vocelune.nguyenminhtruc.site');
   return Array.from(origins);
+}
+
+export function isOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) return true;
+  const normalized = origin.replace(/\/+$/, '');
+  const allowed = getAllowedOrigins();
+  if (allowed.includes(normalized)) return true;
+
+  try {
+    const parsed = new URL(normalized);
+    // Allow localhost/127.0.0.1 on any port
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') return true;
+    // Allow production custom domain and subdomains
+    if (parsed.hostname === 'vocelune.nguyenminhtruc.site' || parsed.hostname.endsWith('.nguyenminhtruc.site')) return true;
+    // Allow onrender and pages.dev subdomains
+    if (parsed.hostname.endsWith('.onrender.com') || parsed.hostname.endsWith('.pages.dev')) return true;
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 if (config.NODE_ENV === 'production') {

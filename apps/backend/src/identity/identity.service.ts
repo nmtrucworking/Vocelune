@@ -141,7 +141,8 @@ export class IdentityService {
       await this.db.forUser(user.id, async tx => {
         await tx.passwordResetToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } });
         await tx.passwordResetToken.create({ data: { userId: user.id, tokenHash: hash(token), expiresAt: new Date(Date.now() + 30 * 60000) } });
-        await tx.emailOutbox.create({ data: { userId: user.id, to: user.email, subject: 'Đặt lại mật khẩu Vocelune', text: encryptEmail(`Đặt lại mật khẩu trong 30 phút: ${config.APP_ORIGIN}/reset-password#token=${token}`) } });
+        const appOrigin = config.APP_ORIGIN || 'https://vocelune.nguyenminhtruc.site';
+        await tx.emailOutbox.create({ data: { userId: user.id, to: user.email, subject: 'Đặt lại mật khẩu Vocelune', text: encryptEmail(`Đặt lại mật khẩu trong 30 phút: ${appOrigin}/reset-password#token=${token}`) } });
       });
     }
     return { message: 'Nếu email tồn tại, hướng dẫn đặt lại mật khẩu sẽ được gửi.' };
