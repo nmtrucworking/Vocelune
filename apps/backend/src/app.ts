@@ -33,6 +33,11 @@ export async function createApp() {
   app.setGlobalPrefix('api/v1');
   app.useGlobalFilters(new ErrorFilter());
   app.enableShutdownHooks();
+  const server = app.getHttpAdapter().getInstance();
+  server.get('/', (_req: any, res: any) => res.status(200).json({ status: 'ok', service: 'vocelune-api' }));
+  server.head('/', (_req: any, res: any) => res.status(200).end());
+  server.get('/health', (_req: any, res: any) => res.status(200).json({ status: 'ok' }));
+  server.head('/health', (_req: any, res: any) => res.status(200).end());
   const swaggerConfig = new DocumentBuilder().setTitle('Vocelune API').setVersion('1.0.0')
     .setDescription('Cookie sessions; mutations require X-CSRF-Token. Reviews and imports require Idempotency-Key. Domain request schemas and examples: docs/backend.md. Scheduler: ts-fsrs 5.4.2 / FSRS-6.')
     .addCookieAuth(config.NODE_ENV === 'production' ? '__Host-vocelune_session' : 'vocelune_session').build();
