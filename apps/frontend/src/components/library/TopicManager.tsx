@@ -63,6 +63,7 @@ export function TopicManager({
     dueCards,
     addDeck,
     updateDeck,
+    batchMoveDecksTopic,
     renameTopicGroup,
     deleteTopicGroup,
   } = useVocelune();
@@ -227,9 +228,7 @@ export function TopicManager({
     try {
       // If user selected existing decks to assign to this new topic
       if (selectedDecksToAssign.length > 0) {
-        for (const deckId of selectedDecksToAssign) {
-          await updateDeck(deckId, { topicGroup: trimmed });
-        }
+        await batchMoveDecksTopic(selectedDecksToAssign, trimmed);
       } else {
         // Automatically create a default deck under this topic so the topic is persisted in DB
         await addDeck({

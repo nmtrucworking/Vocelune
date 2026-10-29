@@ -16,7 +16,10 @@ interface VoceluneContextType {
   settings: UserSettings; isLoaded: boolean; canUndo: boolean;
   addVocabItem: (item: Omit<VocabItem, 'id' | 'createdAt' | 'updatedAt'>) => Promise<VocabItem>;
   updateVocabItem: (id: string, updates: Partial<VocabItem>) => Promise<void>; deleteVocabItem: (id: string) => Promise<void>;
+  batchDeleteVocabItems: (ids: string[]) => Promise<void>;
+  batchMoveVocabItems: (ids: string[], deckId: string) => Promise<void>;
   addDeck: (deck: Omit<Deck, 'id' | 'createdAt'>) => Promise<Deck>; updateDeck: (id: string, updates: Partial<Deck>) => Promise<void>; deleteDeck: (id: string) => Promise<void>;
+  batchMoveDecksTopic: (deckIds: string[], topicGroup: string) => Promise<void>;
   renameTopicGroup: (oldName: string, newName: string) => Promise<void>;
   deleteTopicGroup: (name: string, targetGroup?: string) => Promise<void>;
   forkPublicDeck: (deckId: string, options?: { targetName?: string; topicGroup?: string }) => Promise<{ deck: Deck; importedCount: number }>;
@@ -82,6 +85,10 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => { await post('/auth/logout'); refreshSequence.current++; setSnapshot(null); session.current = null; reveals.current.clear(); pendingReviews.current.clear(); setLastReview(null); }, []);
   const addVocabItem = useCallback(async (item: Omit<VocabItem, 'id' | 'createdAt' | 'updatedAt'>) => {
     const created = await perform(() => post<VocabItem>('/vocabulary', item));
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return { ...prev, vocabItems: [created, ...prev.vocabItems] };
+    });
     notify.success('Đã thêm thẻ mới!', `Từ "${item.word}" đã được đưa vào kho học FSRS.`);
     return created;
   }, [perform, notify]);
@@ -105,8 +112,39 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
     await perform(() => api(`/vocabulary/${id}`, { method: 'DELETE' }));
     notify.info('Đã xóa từ vựng', 'Từ vựng và các thẻ liên quan đã được gỡ bỏ.');
   }, [perform, notify]);
+  const batchDeleteVocabItems = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        vocabItems: prev.vocabItems.filter(v => !idSet.has(v.id)),
+        cards: prev.cards.filter(c => !idSet.has(c.vocabItemId)),
+      };
+    });
+    await perform(() => post('/vocabulary/batch-delete', { ids }));
+    notify.info('Đã xóa hàng loạt', `Đã xóa ${ids.length} từ vựng khỏi thư viện.`);
+  }, [perform, notify]);
+  const batchMoveVocabItems = useCallback(async (ids: string[], deckId: string) => {
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        vocabItems: prev.vocabItems.map(v => idSet.has(v.id) ? { ...v, deckId, deckIds: [deckId] } : v),
+      };
+    });
+    await perform(() => post('/vocabulary/batch-move', { ids, deckId }));
+    notify.success('Đã chuyển bộ từ', `Đã chuyển ${ids.length} từ vựng sang bộ từ mới.`);
+  }, [perform, notify]);
   const addDeck = useCallback(async (deck: Omit<Deck, 'id' | 'createdAt'>) => {
     const created = await perform(() => post<Deck>('/decks', deck));
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return { ...prev, decks: [...prev.decks, created] };
+    });
     notify.success('Đã tạo bộ từ mới!', `Bộ từ "${deck.name}" đã được tạo thành công.`);
     return created;
   }, [perform, notify]);
@@ -125,6 +163,19 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
     });
     await perform(() => api(`/decks/${id}`, { method: 'DELETE' }));
     notify.info('Đã xóa bộ từ', 'Bộ từ đã được gỡ khỏi thư viện.');
+  }, [perform, notify]);
+  const batchMoveDecksTopic = useCallback(async (deckIds: string[], topicGroup: string) => {
+    if (!deckIds.length) return;
+    const idSet = new Set(deckIds);
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        decks: prev.decks.map(d => idSet.has(d.id) ? { ...d, topicGroup } : d),
+      };
+    });
+    await perform(() => post('/decks/batch-move-topic', { deckIds, topicGroup }));
+    notify.success('Đã cập nhật chủ đề', `Đã chuyển ${deckIds.length} bộ từ sang chủ đề "${topicGroup}".`);
   }, [perform, notify]);
   const renameTopicGroup = useCallback(async (oldName: string, newName: string) => {
     setSnapshot(prev => {
@@ -330,7 +381,7 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
   const overview = snapshot?.overview;
   return <VoceluneContext.Provider value={{ analytics: overview ?? null, user: snapshot?.user ?? null, error, clearError: () => setError(null), refresh, login, logout,
     vocabItems: snapshot?.vocabItems ?? [], decks: snapshot?.decks ?? [], cards, reviewLogs: snapshot?.reviewLogs ?? [], testAttempts: snapshot?.testAttempts ?? [], settings: snapshot?.settings ?? INITIAL_SETTINGS, isLoaded, canUndo: !!lastReview,
-    addVocabItem, updateVocabItem, deleteVocabItem, addDeck, updateDeck, deleteDeck, renameTopicGroup, deleteTopicGroup, forkPublicDeck, revealCard, gradeCard, undoLastReview, toggleSuspendCard, updateSettings, uploadAvatar, removeAvatar, uploadVocabImage, removeVocabImage,
+    addVocabItem, updateVocabItem, deleteVocabItem, batchDeleteVocabItems, batchMoveVocabItems, addDeck, updateDeck, deleteDeck, batchMoveDecksTopic, renameTopicGroup, deleteTopicGroup, forkPublicDeck, revealCard, gradeCard, undoLastReview, toggleSuspendCard, updateSettings, uploadAvatar, removeAvatar, uploadVocabImage, removeVocabImage,
     dueCards: snapshot?.dueCards ?? [], ...computed, streak: overview?.streak ?? 0, observedRetention: overview?.observedRetention ?? null, retentionSampleSize: overview?.sampleSize ?? 0,
     weakWords: overview?.weakWords ?? [], todayReviewsCount: overview?.todayReviewsCount ?? 0, activityHeatmap: overview?.activityHeatmap.slice(-42) ?? [],
   }}>{children}</VoceluneContext.Provider>;

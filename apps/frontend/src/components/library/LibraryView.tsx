@@ -38,7 +38,7 @@ interface LibraryViewProps {
 }
 
 export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
-  const { vocabItems, decks, cards, deleteVocabItem, updateVocabItem, settings } = useVocelune();
+  const { vocabItems, decks, cards, deleteVocabItem, updateVocabItem, batchDeleteVocabItems, batchMoveVocabItems, settings } = useVocelune();
 
   // Tab switch: 'my-vocab' | 'manage-topics' | 'community-topics'
   const [activeTab, setActiveTab] = useState<'my-vocab' | 'manage-topics' | 'community-topics'>('my-vocab');
@@ -171,9 +171,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
     if (!confirm(`Bạn có chắc muốn xóa ${selectedIds.size} từ vựng đã chọn khỏi thư viện?`)) return;
     setIsBatchProcessing(true);
     try {
-      for (const id of Array.from(selectedIds)) {
-        await deleteVocabItem(id);
-      }
+      await batchDeleteVocabItems(Array.from(selectedIds));
       setSelectedIds(new Set());
     } catch {
       // Handled by context
@@ -187,9 +185,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
     if (selectedIds.size === 0 || !target) return;
     setIsBatchProcessing(true);
     try {
-      for (const id of Array.from(selectedIds)) {
-        await updateVocabItem(id, { deckId: target });
-      }
+      await batchMoveVocabItems(Array.from(selectedIds), target);
       setSelectedIds(new Set());
       setBatchMoveModalOpen(false);
     } catch {

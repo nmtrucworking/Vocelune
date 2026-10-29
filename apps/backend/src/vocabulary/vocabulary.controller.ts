@@ -9,6 +9,8 @@ export class VocabularyController {
   constructor(@Inject(VocabularyService) private vocabulary: VocabularyService) {}
   @Get('vocabulary') list(@Req() r: AuthRequest, @Query() q: unknown) { return this.vocabulary.list(r.auth.userId, q); }
   @Post('vocabulary') create(@Req() r: AuthRequest, @Body() b: unknown) { return this.vocabulary.create(r.auth.userId, b); }
+  @Post('vocabulary/batch-delete') batchDelete(@Req() r: AuthRequest, @Body() b: unknown) { return this.vocabulary.batchDelete(r.auth.userId, b); }
+  @Post('vocabulary/batch-move') batchMove(@Req() r: AuthRequest, @Body() b: unknown) { return this.vocabulary.batchMove(r.auth.userId, b); }
   @Post('vocabulary/duplicate-preview') duplicates(@Req() r: AuthRequest, @Body() b: unknown) { return this.vocabulary.duplicatePreview(r.auth.userId, b); }
   @Post('vocabulary/merge') merge(@Req() r: AuthRequest, @Body() b: unknown) { return this.vocabulary.merge(r.auth.userId, b); }
   @Get('vocabulary/:id') get(@Req() r: AuthRequest, @Param('id') v: string) { return this.vocabulary.get(r.auth.userId, id(v)); }
@@ -26,6 +28,7 @@ export class VocabularyController {
   @Public() @Get('decks/public') publicDecks(@Query() q: unknown) { return this.vocabulary.publicDecks(q); }
   @Public() @Get('decks/public/:id') publicDeckPreview(@Param('id') d: string) { return this.vocabulary.publicDeckPreview(id(d)); }
   @Post('decks/public/:id/fork') forkDeck(@Req() r: AuthRequest, @Param('id') d: string, @Body() b: unknown) { return this.vocabulary.forkDeck(r.auth.userId, id(d), b); }
+  @Post('decks/batch-move-topic') batchMoveTopic(@Req() r: AuthRequest, @Body() b: unknown) { return this.vocabulary.batchMoveDecksTopic(r.auth.userId, b); }
   @Post('decks') createDeck(@Req() r: AuthRequest, @Body() b: unknown) { return this.vocabulary.createDeck(r.auth.userId, b); }
   @Patch('decks/:id') updateDeck(@Req() r: AuthRequest, @Param('id') d: string, @Body() b: unknown) { return this.vocabulary.updateDeck(r.auth.userId, id(d), b); }
   @Delete('decks/:id') deleteDeck(@Req() r: AuthRequest, @Param('id') d: string) { return this.vocabulary.deleteDeck(r.auth.userId, id(d)); }

@@ -4,8 +4,10 @@ import { z } from 'zod';
 import { Database, json, Tx } from '../common/db';
 import { fail, normalized, pagination, uuid } from '../common/http';
 import { cardDto, deckDto, publicDeckDto, vocabDto } from '../common/serializers';
-import { hash } from '../identity/security';
+import { hash, passwordHash } from '../identity/security';
 import { redactForSharing } from '../integrations/dictionary/license-policy';
+import { OFFICIAL_DECKS } from './official-decks';
+import { parameters, MODEL_VERSION, LIBRARY_VERSION } from '../study/scheduler';
 
 export const pos = z.enum(['noun', 'verb', 'adjective', 'adverb', 'phrase', 'idiom', 'preposition', 'conjunction', 'other']);
 export const cefr = z.enum(['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'unknown']);
@@ -121,6 +123,226 @@ export class VocabularyService {
       return { ok: true };
     });
   }
+
+  async batchDelete(userId: string, body: unknown) {
+    const schema = z.object({
+      ids: z.array(uuid).min(1).max(500),
+    }).strict();
+    const { ids } = schema.parse(body);
+
+    return this.db.forUser(userId, async tx => {
+      const now = new Date();
+      const items = await tx.vocabItem.findMany({
+        where: { id: { in: ids }, userId, deletedAt: null },
+        select: { id: true },
+      });
+      const validIds = items.map(i => i.id);
+      if (validIds.length === 0) return { deletedCount: 0 };
+
+      await tx.vocabItem.updateMany({
+        where: { id: { in: validIds }, userId },
+        data: { deletedAt: now },
+      });
+
+      await tx.card.updateMany({
+        where: { vocabItemId: { in: validIds }, userId },
+        data: { deletedAt: now, version: { increment: 1 } },
+      });
+
+      return { deletedCount: validIds.length };
+    });
+  }
+
+  async batchMove(userId: string, body: unknown) {
+    const schema = z.object({
+      ids: z.array(uuid).min(1).max(500),
+      deckId: uuid,
+    }).strict();
+    const { ids, deckId } = schema.parse(body);
+
+    return this.db.forUser(userId, async tx => {
+      await this.requireDeck(tx, userId, deckId);
+
+      const items = await tx.vocabItem.findMany({
+        where: { id: { in: ids }, userId, deletedAt: null },
+        select: { id: true },
+      });
+      const validIds = items.map(i => i.id);
+      if (validIds.length === 0) return { movedCount: 0 };
+
+      await tx.deckItem.deleteMany({
+        where: { vocabItemId: { in: validIds } },
+      });
+
+      await tx.deckItem.createMany({
+        data: validIds.map(vocabItemId => ({
+          deckId,
+          vocabItemId,
+        })),
+        skipDuplicates: true,
+      });
+
+      return { movedCount: validIds.length };
+    });
+  }
+
+  async batchMoveDecksTopic(userId: string, body: unknown) {
+    const schema = z.object({
+      deckIds: z.array(uuid).min(1).max(100),
+      topicGroup: z.string().trim().min(1).max(60),
+    }).strict();
+    const { deckIds, topicGroup } = schema.parse(body);
+
+    return this.db.forUser(userId, async tx => {
+      const result = await tx.deck.updateMany({
+        where: { id: { in: deckIds }, userId, deletedAt: null },
+        data: { topicGroup },
+      });
+      this.invalidatePublicCache();
+      return { updatedCount: result.count };
+    });
+  }
+
+  private seedingOfficialDecks = false;
+  async ensureOfficialDecks() {
+    if (this.seedingOfficialDecks) return;
+    const publicCount = await this.db.deck.count({ where: { isPublic: true, deletedAt: null } });
+    if (publicCount > 0) return;
+
+    this.seedingOfficialDecks = true;
+    try {
+      const email = 'editorial@vocelune.com';
+      let author = await this.db.user.findUnique({ where: { email } });
+      if (!author) {
+        author = await this.db.user.create({
+          data: {
+            email,
+            displayName: 'Ban Biên Tập Vocelune',
+            passwordHash: await passwordHash('VoceluneOfficial2026!'),
+            role: 'admin',
+            settings: { create: {} },
+          },
+        });
+        await this.db.schedulerConfig.create({
+          data: {
+            userId: author.id,
+            version: 1,
+            modelVersion: MODEL_VERSION,
+            libraryVersion: LIBRARY_VERSION,
+            retention: 0.9,
+            parameters: json(parameters(0.9)),
+          },
+        });
+      }
+
+      const scheduler = await this.db.schedulerConfig.findFirstOrThrow({
+        where: { userId: author.id },
+        orderBy: { version: 'desc' },
+      });
+
+      for (const deckData of OFFICIAL_DECKS) {
+        const existing = await this.db.deck.findFirst({
+          where: {
+            userId: author.id,
+            normalizedName: normalized(deckData.name),
+            deletedAt: null,
+          },
+        });
+
+        let deck = existing;
+        if (!deck) {
+          deck = await this.db.deck.create({
+            data: {
+              userId: author.id,
+              name: deckData.name,
+              normalizedName: normalized(deckData.name),
+              description: deckData.description,
+              color: deckData.color,
+              icon: deckData.icon,
+              topicGroup: deckData.topicGroup,
+              isPublic: true,
+              forkCount: Math.floor(Math.random() * 50) + 12,
+            },
+          });
+        }
+
+        for (const w of deckData.words) {
+          const normalizedWord = normalized(w.word);
+          const lexeme = await this.db.lexeme.upsert({
+            where: {
+              normalized_partOfSpeech_language: {
+                normalized: normalizedWord,
+                partOfSpeech: w.partOfSpeech,
+                language: 'en',
+              },
+            },
+            create: {
+              lemma: w.word,
+              normalized: normalizedWord,
+              partOfSpeech: w.partOfSpeech,
+            },
+            update: {},
+          });
+
+          const senseKey = hash(normalized(w.meaningVi) + '\0' + normalized(w.definitionEn));
+          let vocabItem = await this.db.vocabItem.findFirst({
+            where: {
+              userId: author.id,
+              lexemeId: lexeme.id,
+              senseKey,
+              deletedAt: null,
+            },
+          });
+
+          if (!vocabItem) {
+            vocabItem = await this.db.vocabItem.create({
+              data: {
+                userId: author.id,
+                lexemeId: lexeme.id,
+                senseKey,
+                word: w.word,
+                partOfSpeech: w.partOfSpeech as any,
+                meaningVi: w.meaningVi,
+                definitionEn: w.definitionEn,
+                exampleEn: w.exampleEn,
+                exampleVi: w.exampleVi,
+                phonetic: w.phonetic,
+                cefr: w.cefr as any,
+                cefrSource: 'verified_3000',
+                tags: [normalized(deckData.topicGroup), normalized(w.partOfSpeech)],
+                cards: {
+                  create: [
+                    { userId: author.id, template: 'en_vi', schedulerConfigId: scheduler.id },
+                    { userId: author.id, template: 'vi_en', schedulerConfigId: scheduler.id },
+                  ],
+                },
+              },
+            });
+          }
+
+          await this.db.deckItem.upsert({
+            where: {
+              deckId_vocabItemId: {
+                deckId: deck.id,
+                vocabItemId: vocabItem.id,
+              },
+            },
+            create: {
+              deckId: deck.id,
+              vocabItemId: vocabItem.id,
+            },
+            update: {},
+          });
+        }
+      }
+      this.invalidatePublicCache();
+    } catch {
+      // Non-fatal if concurrent init
+    } finally {
+      this.seedingOfficialDecks = false;
+    }
+  }
+
   private publicDecksCache: { timestamp: number; key: string; data: unknown } | null = null;
   invalidatePublicCache() { this.publicDecksCache = null; }
 
@@ -248,6 +470,7 @@ export class VocabularyService {
   }
 
   async publicDecks(query: unknown) {
+    await this.ensureOfficialDecks();
     const q = z.object({
       topicGroup: z.string().max(60).optional(),
       search: z.string().max(100).optional(),

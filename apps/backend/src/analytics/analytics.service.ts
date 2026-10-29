@@ -53,17 +53,18 @@ export class AnalyticsService {
     }) : [];
     const newCardsTotal = cards.filter(c => !c.suspended && c.state === 'new').length;
     let newCardsPool = newCardsTotal;
-    // Use actual calendar date in user's timezone so forecast always starts from today (e.g. 30/10)
-    const calendarToday = DateTime.fromJSDate(now).setZone(settings.timezone).toISODate() || today;
+    // Use actual calendar date in user's timezone (defaults to Asia/Ho_Chi_Minh) so forecast always starts from today (e.g. 30/10)
+    const userTz = settings.timezone || 'Asia/Ho_Chi_Minh';
+    const calendarToday = DateTime.fromJSDate(now).setZone(userTz).toISODate() || today;
     const forecastData = Array.from({ length: 7 }, (_, i) => {
-      const date = DateTime.fromISO(calendarToday, { zone: settings.timezone }).plus({ days: i });
+      const date = DateTime.fromISO(calendarToday, { zone: userTz }).plus({ days: i });
       const dateStr = date.toISODate() || calendarToday;
       let dueReviews = 0;
       if (i === 0) {
         // Today includes all past due & due today cards that are review/learning
-        dueReviews = cards.filter(c => !c.suspended && c.state !== 'new' && (studyDate(c.dueAt, settings.timezone, settings.dayStartHour) <= dateStr || c.dueAt <= now)).length;
+        dueReviews = cards.filter(c => !c.suspended && c.state !== 'new' && (studyDate(c.dueAt, userTz, settings.dayStartHour) <= dateStr || c.dueAt <= now)).length;
       } else {
-        dueReviews = cards.filter(c => !c.suspended && c.state !== 'new' && studyDate(c.dueAt, settings.timezone, settings.dayStartHour) === dateStr).length;
+        dueReviews = cards.filter(c => !c.suspended && c.state !== 'new' && studyDate(c.dueAt, userTz, settings.dayStartHour) === dateStr).length;
       }
       const newForDay = Math.min(newCardsPool, i === 0 ? queue.counts.newRemaining : settings.newCardsPerDay);
       newCardsPool = Math.max(0, newCardsPool - newForDay);

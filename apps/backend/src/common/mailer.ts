@@ -81,11 +81,19 @@ export async function sendEmailDirect(options: SendMailOptions): Promise<{ succe
     let resData = (await res.json().catch(() => null)) as { id?: string; message?: string; name?: string; statusCode?: number } | null;
 
     // Auto-retry with onboarding@resend.dev if custom sender failed validation (422)
-    if (!res.ok && res.status === 422 && from !== 'Vocelune <onboarding@resend.dev>') {
-      logger.warn(`Resend API rejected sender "${from}" (${resData?.message}). Retrying with "Vocelune <onboarding@resend.dev>"...`);
-      from = 'Vocelune <onboarding@resend.dev>';
-      res = await sendViaResend(from);
-      resData = (await res.json().catch(() => null)) as { id?: string; message?: string; name?: string; statusCode?: number } | null;
+    if (!res.ok && res.status === 422) {
+      if (from !== 'Vocelune <onboarding@resend.dev>') {
+        logger.warn(`Resend API rejected sender "${from}" (${resData?.message}). Retrying with "Vocelune <onboarding@resend.dev>"...`);
+        from = 'Vocelune <onboarding@resend.dev>';
+        res = await sendViaResend(from);
+        resData = (await res.json().catch(() => null)) as any;
+      }
+      if (!res.ok && res.status === 422 && from !== 'onboarding@resend.dev') {
+        logger.warn(`Resend API rejected display name sender. Retrying with bare "onboarding@resend.dev"...`);
+        from = 'onboarding@resend.dev';
+        res = await sendViaResend(from);
+        resData = (await res.json().catch(() => null)) as any;
+      }
     }
 
     if (!res.ok) {
