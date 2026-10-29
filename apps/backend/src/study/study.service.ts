@@ -46,15 +46,17 @@ export class StudyService {
       const session = await tx.studySession.findFirst({ where: { id: sessionId, userId, kind: 'srs', endedAt: null, startedAt: { gte: new Date(Date.now() - 12 * 3600000) } } });
       if (!session) fail(404, 'SESSION_NOT_FOUND', 'Phiên học không còn hoạt động.');
       const card = await this.requireCard(tx, userId, cardId);
-      await this.checkReviewable(tx, userId, card, new Date());
+      await this.checkReviewable(tx, userId, card, new Date(), true);
       const token = await tx.reveal.create({ data: { sessionId, cardId, cardVersion: card.version, expiresAt: new Date(Date.now() + 5 * 60000) } });
       const scheduler = await tx.schedulerConfig.findFirstOrThrow({ where: { userId }, orderBy: { version: 'desc' } });
       return { revealId: token.id, cardVersion: card.version, previews: ([1, 2, 3, 4] as const).map(rating => ({ rating, dueAt: review(card, rating, new Date(), scheduler.retention).dueAt })) };
     });
   }
-  private async checkReviewable(tx: Tx, userId: string, card: Card, now: Date) {
-    if (card.suspended || card.dueAt > now || (card.buriedUntil && card.buriedUntil > now)) fail(409, 'CARD_NOT_DUE', 'Thẻ chưa đến hạn hoặc đã tạm dừng.');
-    if (card.state === 'new') {
+  private async checkReviewable(tx: Tx, userId: string, card: Card, now: Date, allowAhead = true) {
+    if (card.suspended) fail(409, 'CARD_SUSPENDED', 'Thẻ đã tạm dừng.');
+    if (!allowAhead && card.dueAt > now) fail(409, 'CARD_NOT_DUE', 'Thẻ chưa đến hạn hoặc đã tạm dừng.');
+    if (!allowAhead && card.buriedUntil && card.buriedUntil > now) fail(409, 'CARD_BURIED', 'Thẻ đang được tạm ẩn.');
+    if (card.state === 'new' && !allowAhead) {
       const settings = await tx.userSettings.findUniqueOrThrow({ where: { userId } });
       const learned = await tx.reviewLog.count({ where: { userId, beforeState: 'new', voidedAt: null, source: 'srs_study', reviewedAt: { gte: studyDayStart(now, settings.timezone, settings.dayStartHour) } } });
       if (learned >= settings.newCardsPerDay) fail(409, 'DAILY_LIMIT', 'Đã đạt giới hạn thẻ mới hôm nay.');
@@ -74,7 +76,7 @@ export class StudyService {
       const card = await this.requireCard(tx, userId, cardId);
       if (card.version !== input.expectedCardVersion) fail(409, 'STALE_CARD', 'Thẻ đã thay đổi trên một phiên khác.', { latestCardVersion: card.version });
       const now = new Date();
-      await this.checkReviewable(tx, userId, card, now);
+      await this.checkReviewable(tx, userId, card, now, true);
       const reveal = await tx.reveal.findFirst({ where: { id: input.revealId, sessionId: input.sessionId, cardId, cardVersion: card.version, consumedAt: null, expiresAt: { gt: now } } });
       if (!reveal) fail(409, 'REVEAL_REQUIRED', 'Cần xem đáp án trước khi đánh giá.');
       await tx.reveal.update({ where: { id: reveal.id }, data: { consumedAt: now } });

@@ -17,6 +17,7 @@ import {
   Eye,
   Layers,
   Zap,
+  Clock,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { Card, VocabItem, FSRSRating, StudyMode } from '@/types';
@@ -25,10 +26,13 @@ import { speakWord } from '@/lib/speech';
 import { triggerConfetti } from '@/lib/confetti';
 import { AudioButton } from '../common/AudioButton';
 
+export type StudyScope = 'due' | 'ahead' | 'all';
+
 export function StudyConsole() {
   const { dueCards, vocabItems, decks, gradeCard, undoLastReview, canUndo, settings, revealCard, cards } =
     useVocelune();
 
+  const [studyScope, setStudyScope] = useState<StudyScope>('due');
   const [selectedTopicGroup, setSelectedTopicGroup] = useState<string>('all');
   const [selectedDeckId, setSelectedDeckId] = useState<string>('all');
 
@@ -40,9 +44,27 @@ export function StudyConsole() {
 
   const deckMap = useMemo(() => new Map(decks.map((d) => [d.id, d])), [decks]);
 
+  const scopeStats = useMemo(() => {
+    const now = Date.now();
+    let due = 0;
+    let ahead = 0;
+    for (const c of cards) {
+      if (c.suspended) continue;
+      const isDue = c.state === 'new' || new Date(c.dueAt).getTime() <= now;
+      if (isDue) due++;
+      else ahead++;
+    }
+    return { due, ahead, all: due + ahead };
+  }, [cards]);
+
   const candidateCards = useMemo(() => {
-    const base = dueCards.length > 0 ? dueCards : cards;
-    return base.filter((card) => {
+    const now = Date.now();
+    return cards.filter((card) => {
+      if (card.suspended) return false;
+      const isDue = card.state === 'new' || new Date(card.dueAt).getTime() <= now;
+      if (studyScope === 'due' && !isDue) return false;
+      if (studyScope === 'ahead' && isDue) return false;
+
       const vocab = vocabItems.find((v) => v.id === card.vocabItemId);
       if (!vocab) return false;
       if (selectedDeckId !== 'all' && vocab.deckId !== selectedDeckId) return false;
@@ -52,7 +74,7 @@ export function StudyConsole() {
       }
       return true;
     });
-  }, [dueCards, cards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
+  }, [cards, studyScope, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
 
   const grading = useRef(false);
   const [revealReady, setRevealReady] = useState(false);
@@ -88,6 +110,24 @@ export function StudyConsole() {
     if (!currentCard) return undefined;
     return vocabItems.find((v) => v.id === currentCard.vocabItemId);
   }, [currentCard, vocabItems]);
+
+  const isCurrentCardDue = useMemo(() => {
+    if (!currentCard) return true;
+    return currentCard.state === 'new' || new Date(currentCard.dueAt).getTime() <= Date.now();
+  }, [currentCard]);
+
+  const dueRelativeText = useMemo(() => {
+    if (!currentCard) return '';
+    if (currentCard.state === 'new') return 'Thẻ mới';
+    const diffMs = new Date(currentCard.dueAt).getTime() - Date.now();
+    if (diffMs <= 0) return 'Đến hạn ôn';
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 60) return `${mins} phút nữa`;
+    const hours = Math.round(diffMs / 3600000);
+    if (hours < 24) return `${hours} giờ nữa`;
+    const days = Math.round(hours / 24);
+    return `${days} ngày nữa`;
+  }, [currentCard]);
 
   useEffect(() => {
     let cancelled = false;
@@ -276,36 +316,73 @@ export function StudyConsole() {
           </div>
         )}
 
-        <div className="flex items-center justify-center gap-3 pt-4">
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => {
-              setQueue([
-                ...vocabItems.map((v) => ({
-                  id: `card_${v.id}_en_vi`,
-                  vocabItemId: v.id,
-                  template: 'en_vi' as const,
-                  state: 'review' as const,
-                  dueAt: new Date().toISOString(),
-                  stability: 2,
-                  difficulty: 5,
-                  elapsedDays: 1,
-                  scheduledDays: 1,
-                  reps: 1,
-                  lapses: 0,
-                  version: 1,
-                })),
-              ]);
-              setCurrentIndex(0);
-              setIsFlipped(false);
-              setCompletedCount(0);
-            }}
-            className="px-5 py-3 bg-brand-primary text-white hover:bg-brand-primaryHover font-semibold text-xs rounded-control transition-colors shadow-md flex items-center gap-2"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Ôn luyện tự do ({vocabItems.length} từ)</span>
-          </motion.button>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4 flex-wrap">
+          {scopeStats.ahead > 0 && studyScope !== 'ahead' && (
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                setStudyScope('ahead');
+                setCompletedCount(0);
+                setCurrentIndex(0);
+                setIsFlipped(false);
+              }}
+              className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs rounded-control transition-colors shadow-md flex items-center gap-2"
+            >
+              <Zap className="w-4 h-4 fill-white" />
+              <span>Học sớm các thẻ chưa đến hạn ({scopeStats.ahead} thẻ)</span>
+            </motion.button>
+          )}
+
+          {scopeStats.all > 0 && studyScope !== 'all' && (
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                setStudyScope('all');
+                setCompletedCount(0);
+                setCurrentIndex(0);
+                setIsFlipped(false);
+              }}
+              className="px-5 py-3 bg-brand-primary text-white hover:bg-brand-primaryHover font-semibold text-xs rounded-control transition-colors shadow-md flex items-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Ôn tập toàn bộ kho từ ({scopeStats.all} thẻ)</span>
+            </motion.button>
+          )}
+
+          {studyScope !== 'due' && scopeStats.due > 0 && (
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                setStudyScope('due');
+                setCompletedCount(0);
+                setCurrentIndex(0);
+                setIsFlipped(false);
+              }}
+              className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-control transition-colors shadow-md flex items-center gap-2"
+            >
+              <Clock className="w-4 h-4" />
+              <span>Quay lại thẻ đến hạn ({scopeStats.due} thẻ)</span>
+            </motion.button>
+          )}
+
+          {(studyScope === 'ahead' || studyScope === 'all') && queue.length > 0 && (
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                setCurrentIndex(0);
+                setIsFlipped(false);
+                setCompletedCount(0);
+              }}
+              className="px-5 py-3 bg-slate-700 text-white hover:bg-slate-800 font-semibold text-xs rounded-control transition-colors shadow-md flex items-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Làm mới phiên học hiện tại</span>
+            </motion.button>
+          )}
         </div>
       </motion.div>
     );
@@ -316,7 +393,85 @@ export function StudyConsole() {
     typedInput.trim().toLowerCase() === currentVocab.word.trim().toLowerCase();
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-5">
+      {/* Scope Switcher: Đến hạn vs Học sớm vs Tất cả */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-1.5 bg-slate-100/80 border border-slate-200/90 rounded-2xl shadow-xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={() => {
+              setStudyScope('due');
+              setSlideDirection(1);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              studyScope === 'due'
+                ? 'bg-white text-emerald-800 shadow-xs border border-emerald-200/80'
+                : 'text-text-secondary hover:text-brand-ink'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Đến hạn ôn</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                studyScope === 'due' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200/80 text-slate-600'
+              }`}
+            >
+              {scopeStats.due}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setStudyScope('ahead');
+              setSlideDirection(1);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              studyScope === 'ahead'
+                ? 'bg-white text-amber-900 shadow-xs border border-amber-300'
+                : 'text-text-secondary hover:text-brand-ink'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+            <span>Chưa đến hạn · Học sớm</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                studyScope === 'ahead' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200/80 text-slate-600'
+              }`}
+            >
+              {scopeStats.ahead}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setStudyScope('all');
+              setSlideDirection(1);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              studyScope === 'all'
+                ? 'bg-white text-indigo-900 shadow-xs border border-indigo-200/80'
+                : 'text-text-secondary hover:text-brand-ink'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Tất cả thẻ</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                studyScope === 'all' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200/80 text-slate-600'
+              }`}
+            >
+              {scopeStats.all}
+            </span>
+          </button>
+        </div>
+
+        {studyScope === 'ahead' && (
+          <span className="text-[11px] text-amber-700 font-medium px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200/60 inline-flex items-center gap-1 self-start sm:self-auto">
+            <Zap className="w-3 h-3 text-amber-600" />
+            <span>Học trước hạn: FSRS tự động cập nhật độ nhớ</span>
+          </span>
+        )}
+      </div>
+
       {/* Top Header: Progress & Mode Switcher */}
       {/* Header controls: Topic selection & Mode selector */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 text-xs">
@@ -450,9 +605,19 @@ export function StudyConsole() {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-xs text-text-secondary">
-                    <span className="text-[11px] bg-slate-100 px-2 py-0.5 rounded-full font-mono">
-                      Mặt trước: Câu hỏi
+                  <div className="flex items-center gap-2 text-xs">
+                    {isCurrentCardDue ? (
+                      <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2 py-0.5 rounded-full font-semibold">
+                        {currentCard.state === 'new' ? 'Thẻ mới' : 'Đến hạn ôn'}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-amber-500 fill-amber-400" />
+                        <span>Học sớm · {dueRelativeText}</span>
+                      </span>
+                    )}
+                    <span className="hidden sm:inline-block text-[11px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-mono">
+                      Câu hỏi
                     </span>
                   </div>
                 </div>
@@ -696,6 +861,12 @@ export function StudyConsole() {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {!isCurrentCardDue && (
+                      <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                        <Zap className="w-2.5 h-2.5 text-amber-500 fill-amber-400" />
+                        <span>{dueRelativeText}</span>
+                      </span>
+                    )}
                     <AudioButton
                       text={currentVocab.word}
                       dialect={currentVocab.dialect || settings.englishDialect}
