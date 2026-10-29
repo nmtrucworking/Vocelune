@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "postinstall": "prisma generate",
     "build": "prisma generate && tsc -p tsconfig.json",
     "build:backend": "npm run build",
     "start": "node dist/main.js",
