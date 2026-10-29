@@ -19,6 +19,7 @@ export const settingsSchema = z.object({
   englishDialect: z.enum(['en-us', 'en-gb']).optional(), desiredRetention: z.number().min(0.85).max(0.95).optional(),
   newCardsPerDay: z.number().int().min(0).max(1000).optional(), dayStartHour: z.number().int().min(0).max(23).optional(),
   soundEnabled: z.boolean().optional(), autoPronounce: z.boolean().optional(), language: z.enum(['vi', 'en']).optional(), theme: z.enum(['light', 'dark', 'system']).optional(),
+  emailReminderStudy: z.boolean().optional(), emailDailySummary: z.boolean().optional(),
 }).strict();
 @Injectable()
 export class IdentityService {

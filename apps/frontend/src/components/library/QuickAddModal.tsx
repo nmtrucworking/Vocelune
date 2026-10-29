@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Search, Sparkles, Volume2, Check, Info } from 'lucide-react';
+import { X, Search, Sparkles, Volume2, Check, Info, Wand2, Loader2 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { PartOfSpeech, CEFRLevel, Dialect, VocabItem } from '@/types';
 import { api, post } from '@/lib/api';
-import { DictionaryLookup, DictionaryProvider, useDictionaryProviders, translateText } from '@/lib/dictionary';
+import { DictionaryLookup, DictionaryProvider, useDictionaryProviders, translateText, convertWordToIpa } from '@/lib/dictionary';
 import { COMMON_WORD_KNOWLEDGE } from '@/lib/local-vocabulary-hints';
 import { DictionarySourceSelect } from '../dictionary/DictionarySourceSelect';
 import { DictionaryAttribution } from '../dictionary/DictionaryAttribution';

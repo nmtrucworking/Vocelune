@@ -42,6 +42,17 @@ export async function translateText(text: string, from = 'en', to = 'vi'): Promi
     return { translation: '', alternatives: [] };
   }
 }
+
+export async function convertWordToIpa(word: string, dialect: Dialect = 'en-us'): Promise<{ ipa: string; dialect: string; source: string }> {
+  try {
+    return await api<{ word: string; ipa: string; dialect: string; source: string }>('/dictionary/convert-ipa', {
+      method: 'POST',
+      body: JSON.stringify({ word: word.trim(), dialect }),
+    });
+  } catch {
+    return { ipa: '', dialect, source: 'none' };
+  }
+}
 export const DICTIONARY_SOURCES: { id: DictionaryProvider; name: string; tier: 'local' | 'free' | 'api_key' }[] = [
   { id: 'local_kaikki', name: 'Kaikki / Wiktionary local', tier: 'local' },
   { id: 'local_wordnet', name: 'Open English WordNet local', tier: 'local' },

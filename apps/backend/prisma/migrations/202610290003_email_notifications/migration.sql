@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "UserSettings" ADD COLUMN IF NOT EXISTS "emailReminderStudy" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "UserSettings" ADD COLUMN IF NOT EXISTS "emailDailySummary" BOOLEAN NOT NULL DEFAULT true;

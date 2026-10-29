@@ -151,6 +151,8 @@ export interface UserSettings {
   dayStartHour: number;
   soundEnabled: boolean;
   autoPronounce: boolean;
+  emailReminderStudy?: boolean;
+  emailDailySummary?: boolean;
 }
 
 export interface DailyActivity {
