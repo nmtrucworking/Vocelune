@@ -186,7 +186,7 @@ export function AuthForm({
                   maxLength={100}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Ví dụ: Minh Trúc"
+                  placeholder="Nhập tên hiển thị của bạn"
                   className="w-full pl-9 pr-3 py-2.5 bg-brand-canvas/60 border border-slate-200 rounded-control text-xs text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all"
                   autoComplete="name"
                 />

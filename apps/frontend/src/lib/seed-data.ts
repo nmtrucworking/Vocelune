@@ -28,7 +28,7 @@ export const INITIAL_DECKS: Deck[] = [
 ];
 
 export const INITIAL_SETTINGS: UserSettings = {
-  displayName: 'Minh Trúc',
+  displayName: 'Học viên Vocelune',
   timezone: 'Asia/Ho_Chi_Minh',
   englishDialect: 'en-us',
   dictionaryProvider: 'free_dictionary',
