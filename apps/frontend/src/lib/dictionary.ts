@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
-import type { Dialect, PartOfSpeech } from '@/types';
+import type { Dialect, PartOfSpeech, CEFRLevel } from '@/types';
 export type DictionaryProvider = 'auto' | 'free_dictionary' | 'merriam_webster' | 'oxford' | 'local_kaikki' | 'local_wordnet' | 'wiktionary' | 'wordsapi' | 'collins' | 'datamuse';
 export type DictionaryAttribution = { name: string; url: string; license?: { name: string; url: string } };
 export type DictionaryProviderStatus = {
@@ -51,6 +51,30 @@ export async function convertWordToIpa(word: string, dialect: Dialect = 'en-us')
     });
   } catch {
     return { ipa: '', dialect, source: 'none' };
+  }
+}
+
+export async function estimateWordCefr(
+  word: string,
+  partOfSpeech?: string,
+  definitionEn?: string
+): Promise<{ cefr: CEFRLevel; confidence: string; source: string; reasoning: string }> {
+  try {
+    return await api<{ word: string; cefr: CEFRLevel; confidence: string; source: string; reasoning: string }>(
+      '/dictionary/estimate-cefr',
+      {
+        method: 'POST',
+        body: JSON.stringify({ word: word.trim(), partOfSpeech, definitionEn }),
+      }
+    );
+  } catch {
+    const tokens = word.trim().split(/\s+/).filter(Boolean);
+    const len = word.replace(/[^a-zA-Z]/g, '').length;
+    let cefr: CEFRLevel = 'B1';
+    if (tokens.length >= 3 || len >= 12) cefr = 'B2';
+    else if (len <= 4) cefr = 'A1';
+    else if (len <= 7) cefr = 'A2';
+    return { cefr, confidence: 'estimated', source: 'client_heuristic', reasoning: 'Ước tính theo độ dài & từ ghép' };
   }
 }
 export const DICTIONARY_SOURCES: { id: DictionaryProvider; name: string; tier: 'local' | 'free' | 'api_key' }[] = [

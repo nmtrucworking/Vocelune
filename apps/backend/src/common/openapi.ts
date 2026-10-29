@@ -4,7 +4,7 @@ import { credentials, settingsSchema } from '../identity/identity.service';
 import { vocabSchema, deckSchema } from '../vocabulary/vocabulary.service';
 import { reviewSchema } from '../study/study.service';
 import { lookupSchema } from '../integrations/dictionary/contracts';
-import { convertIpaSchema, saveDictionarySchema } from '../integrations/dictionary.service';
+import { convertIpaSchema, estimateCefrSchema, saveDictionarySchema } from '../integrations/dictionary.service';
 import { blueprintSchema } from '../tests/tests.service';
 export function enrichOpenApi(document: OpenAPIObject) {
   const bodies: Record<string, z.ZodType> = {
@@ -25,6 +25,7 @@ export function enrichOpenApi(document: OpenAPIObject) {
     'post /test-attempts/{id}/submit': z.object({ answers: z.record(z.string().uuid(), z.string()).optional() }),
     'post /dictionary/lookup': lookupSchema,
     'post /dictionary/convert-ipa': convertIpaSchema,
+    'post /dictionary/estimate-cefr': estimateCefrSchema,
     'post /dictionary/vocabulary': saveDictionarySchema,
     'post /notifications/test-reminder': z.object({}).optional(),
     'post /notifications/test-summary': z.object({}).optional(),

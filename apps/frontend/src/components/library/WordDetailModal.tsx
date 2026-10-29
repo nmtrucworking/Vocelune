@@ -4,9 +4,10 @@ import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Volume2, Trash2, Check, Sparkles, Folder, BookOpen, Plus, Image as ImageIcon, Crop, Loader2, Wand2 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
+import { useNotification } from '@/context/NotificationContext';
 import { VocabItem, PartOfSpeech, CEFRLevel, Deck } from '@/types';
 import { speakWord } from '@/lib/speech';
-import { translateText, convertWordToIpa } from '@/lib/dictionary';
+import { translateText, convertWordToIpa, estimateWordCefr } from '@/lib/dictionary';
 import { DictionaryAttribution } from '../dictionary/DictionaryAttribution';
 import { AudioButton } from '../common/AudioButton';
 import { LexicalMetadataView } from '../dictionary/LexicalMetadataView';
@@ -20,6 +21,7 @@ interface WordDetailModalProps {
 
 export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps) {
   const { updateVocabItem, deleteVocabItem, addDeck, decks, cards, settings, uploadVocabImage, removeVocabImage } = useVocelune();
+  const { notify } = useNotification();
 
   const [isEditing, setIsEditing] = useState(false);
   const [word, setWord] = useState(vocab?.word || '');
@@ -38,6 +40,7 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
   const [isTranslating, setIsTranslating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isConvertingIpa, setIsConvertingIpa] = useState(false);
+  const [isEstimatingCefr, setIsEstimatingCefr] = useState(false);
 
   const handleConvertIpa = async () => {
     const targetWord = word.trim();
@@ -50,6 +53,21 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
       }
     } finally {
       setIsConvertingIpa(false);
+    }
+  };
+
+  const handleEstimateCefr = async () => {
+    const targetWord = word.trim();
+    if (!targetWord || isEstimatingCefr) return;
+    setIsEstimatingCefr(true);
+    try {
+      const res = await estimateWordCefr(targetWord, pos, definitionEn);
+      if (res.cefr && res.cefr !== 'unknown') {
+        setCefr(res.cefr);
+        notify.info('Đã ước tính CEFR', `Cấp độ ${res.cefr}: ${res.reasoning || res.source}`);
+      }
+    } finally {
+      setIsEstimatingCefr(false);
     }
   };
 
@@ -379,7 +397,19 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-medium text-text-secondary">Cấp độ CEFR</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-text-secondary">Cấp độ CEFR</label>
+                  <button
+                    type="button"
+                    onClick={handleEstimateCefr}
+                    disabled={isEstimatingCefr || !word.trim()}
+                    className="text-[11px] text-brand-primary hover:underline font-medium flex items-center gap-1 disabled:opacity-50"
+                    title="Tự động ước lượng cấp độ CEFR theo từ điển & độ phổ biến"
+                  >
+                    {isEstimatingCefr ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                    <span>{isEstimatingCefr ? 'Đang đoán...' : 'Đoán CEFR'}</span>
+                  </button>
+                </div>
                 <select
                   value={cefr}
                   onChange={(e) => setCefr(e.target.value as CEFRLevel)}

@@ -6,7 +6,7 @@ import { useVocelune } from '@/context/VoceluneContext';
 import { useNotification } from '@/context/NotificationContext';
 import { PartOfSpeech, CEFRLevel, Dialect, VocabItem } from '@/types';
 import { api, post } from '@/lib/api';
-import { DictionaryLookup, DictionaryProvider, useDictionaryProviders, translateText, convertWordToIpa } from '@/lib/dictionary';
+import { DictionaryLookup, DictionaryProvider, useDictionaryProviders, translateText, convertWordToIpa, estimateWordCefr } from '@/lib/dictionary';
 import { COMMON_WORD_KNOWLEDGE } from '@/lib/local-vocabulary-hints';
 import { DictionarySourceSelect } from '../dictionary/DictionarySourceSelect';
 import { DictionaryAttribution } from '../dictionary/DictionaryAttribution';
@@ -32,6 +32,7 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
   const [keepOpen, setKeepOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false), [saving, setSaving] = useState(false);
   const [isConvertingIpa, setIsConvertingIpa] = useState(false);
+  const [isEstimatingCefr, setIsEstimatingCefr] = useState(false);
   const [meaningAlternatives, setMeaningAlternatives] = useState<string[]>([]);
   const [isTranslatingMeaning, setIsTranslatingMeaning] = useState(false);
   const [isTranslatingExample, setIsTranslatingExample] = useState(false);
@@ -162,6 +163,27 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
       setLookupMessage('Lỗi khi chuyển đổi IPA. Vui lòng thử lại hoặc nhập tay.');
     } finally {
       setIsConvertingIpa(false);
+    }
+  };
+  const handleEstimateCefr = async () => {
+    const targetWord = word.trim();
+    if (!targetWord || isEstimatingCefr) return;
+    setIsEstimatingCefr(true);
+    try {
+      const res = await estimateWordCefr(targetWord, pos, definitionEn);
+      if (res.cefr && res.cefr !== 'unknown') {
+        setCefr(res.cefr);
+        setLookupNoticeType('info');
+        setLookupMessage(`Đã ước tính cấp độ CEFR (${res.cefr}): ${res.reasoning || res.source}`);
+      } else {
+        setLookupNoticeType('warning');
+        setLookupMessage('Chưa xác định được CEFR tự động. Bạn có thể chọn mức phù hợp trong danh sách.');
+      }
+    } catch {
+      setLookupNoticeType('warning');
+      setLookupMessage('Lỗi khi ước lượng CEFR. Vui lòng chọn thủ công.');
+    } finally {
+      setIsEstimatingCefr(false);
     }
   };
   const handleSelectSense = async (sense: typeof candidates[number]) => {
@@ -430,7 +452,19 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-text-secondary">Khung CEFR</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-text-secondary">Khung CEFR</label>
+                <button
+                  type="button"
+                  disabled={isEstimatingCefr || !word.trim()}
+                  onClick={handleEstimateCefr}
+                  className="text-[11px] text-brand-primary hover:underline font-medium flex items-center gap-1 disabled:opacity-50"
+                  title="Tự động ước lượng cấp độ CEFR theo từ điển & độ phổ biến"
+                >
+                  {isEstimatingCefr ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                  {isEstimatingCefr ? 'Đang đoán...' : 'Đoán CEFR'}
+                </button>
+              </div>
               <select
                 value={cefr}
                 onChange={(e) => setCefr(e.target.value as CEFRLevel)}

@@ -127,6 +127,21 @@ export function StudyConsole() {
     return vocabItems.find((v) => v.id === currentCard.vocabItemId);
   }, [currentCard, vocabItems]);
 
+  const displayCefr = useMemo(() => {
+    if (!currentVocab) return { level: 'B1', isEstimated: false };
+    if (currentVocab.cefr && currentVocab.cefr !== 'unknown') {
+      return { level: currentVocab.cefr, isEstimated: false };
+    }
+    const tokens = currentVocab.word.trim().split(/\s+/).filter(Boolean);
+    const len = currentVocab.word.replace(/[^a-zA-Z]/g, '').length;
+    let level = 'B1';
+    if (tokens.length >= 3 || len >= 13) level = 'B2';
+    else if (tokens.length >= 2 || len >= 9) level = 'B1';
+    else if (len <= 4) level = 'A1';
+    else level = 'A2';
+    return { level, isEstimated: true };
+  }, [currentVocab]);
+
   const isCurrentCardDue = useMemo(() => {
     if (!currentCard) return true;
     return dueIdSet.has(currentCard.id);
@@ -623,8 +638,16 @@ export function StudyConsole() {
                 {/* Front Top Metadata Bar */}
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.2 rounded text-[10px] font-extrabold bg-brand-primarySoft text-brand-primary">
-                      {currentVocab.cefr}
+                    <span
+                      className={`px-2 py-0.2 rounded text-[10px] font-extrabold ${
+                        displayCefr.isEstimated
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200/80'
+                          : 'bg-brand-primarySoft text-brand-primary'
+                      }`}
+                      title={displayCefr.isEstimated ? 'Cấp độ CEFR tự động ước lượng (dựa trên cấu trúc từ)' : `Chuẩn CEFR: ${displayCefr.level}`}
+                    >
+                      {displayCefr.level}
+                      {displayCefr.isEstimated && <span className="ml-1 opacity-70 text-[9px] font-normal">~</span>}
                     </span>
                     <span className="text-xs font-semibold text-text-secondary italic">
                       ({currentVocab.partOfSpeech})
@@ -875,8 +898,16 @@ export function StudyConsole() {
                 {/* Back Top Metadata Bar */}
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded text-[11px] font-extrabold bg-brand-primarySoft text-brand-primary">
-                      {currentVocab.cefr}
+                    <span
+                      className={`px-2.5 py-0.5 rounded text-[11px] font-extrabold ${
+                        displayCefr.isEstimated
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200/80'
+                          : 'bg-brand-primarySoft text-brand-primary'
+                      }`}
+                      title={displayCefr.isEstimated ? 'Cấp độ CEFR tự động ước lượng (dựa trên cấu trúc từ)' : `Chuẩn CEFR: ${displayCefr.level}`}
+                    >
+                      {displayCefr.level}
+                      {displayCefr.isEstimated && <span className="ml-1 opacity-70 text-[10px] font-normal">~</span>}
                     </span>
                     <span className="text-xs font-semibold text-brand-ink">
                       {currentVocab.word}

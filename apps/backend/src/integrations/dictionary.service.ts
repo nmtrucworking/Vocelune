@@ -17,10 +17,17 @@ import { CollinsAdapter } from './dictionary/collins.adapter';
 import { DatamuseAdapter } from './dictionary/datamuse.adapter';
 import { hasValue, localProviders, mergeCandidates, persistableProvenance, senseValues, sourceResult } from './dictionary/lexical';
 import { resolveWordIpa } from './dictionary/ipa-converter';
+import { estimateWordCefr } from './dictionary/cefr-estimator';
 
 export const convertIpaSchema = z.object({
   word: z.string().trim().min(1).max(100),
   dialect: z.enum(['en-us', 'en-gb']).default('en-us'),
+}).strict();
+
+export const estimateCefrSchema = z.object({
+  word: z.string().trim().min(1).max(200),
+  partOfSpeech: z.string().optional(),
+  definitionEn: z.string().optional(),
 }).strict();
 
 export const translateSchema = z.object({
@@ -180,6 +187,11 @@ export class DictionaryService {
       return { word: input.word, ipa: '', dialect: input.dialect, source: 'none' };
     }
     return { word: input.word, ipa: resolved.ipa, dialect: resolved.dialect, source: resolved.source };
+  }
+
+  async estimateCefr(userId: string, body: unknown) {
+    const input = estimateCefrSchema.parse(body);
+    return estimateWordCefr(input.word, input.partOfSpeech, input.definitionEn);
   }
 
   private cache = new Map<string, { expires: number; result: LookupResult }>();

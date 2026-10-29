@@ -12,6 +12,7 @@ export class IntegrationsController {
   @Get('dictionary/providers/status') status(@Req() r: AuthRequest) { return this.dictionary.status(r.auth.userId); }
   @Post('dictionary/lookup') @Throttle({ default: { limit: 20, ttl: 60000 } }) lookup(@Req() r: AuthRequest, @Body() b: unknown) { return this.dictionary.lookup(r.auth.userId, b); }
   @Post('dictionary/convert-ipa') @Throttle({ default: { limit: 60, ttl: 60000 } }) convertIpa(@Req() r: AuthRequest, @Body() b: unknown) { return this.dictionary.convertIpa(r.auth.userId, b); }
+  @Post('dictionary/estimate-cefr') @Throttle({ default: { limit: 60, ttl: 60000 } }) estimateCefr(@Req() r: AuthRequest, @Body() b: unknown) { return this.dictionary.estimateCefr(r.auth.userId, b); }
   @Post('dictionary/translate') @Throttle({ default: { limit: 60, ttl: 60000 } }) translate(@Req() r: AuthRequest, @Body() b: unknown) { return this.dictionary.translate(r.auth.userId, b); }
   @Post('dictionary/vocabulary') @Throttle({ default: { limit: 20, ttl: 60000 } }) save(@Req() r: AuthRequest, @Body() b: unknown) { return this.dictionary.saveLicensed(r.auth.userId, b); }
   @Post('media/upload-intents') intent(@Req() r: AuthRequest, @Body() b: unknown) { return this.media.intent(r.auth.userId, b); }

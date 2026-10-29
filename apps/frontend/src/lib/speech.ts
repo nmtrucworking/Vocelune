@@ -176,8 +176,22 @@ function playSpeechSynthesis(
 }
 
 /**
+ * Cleans words or phrases for natural speech synthesis
+ * E.g., "central processing unit (CPU)" -> "central processing unit, CPU"
+ */
+export function cleanTextForSpeech(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\(([^)]+)\)/g, ', $1')
+    .replace(/[/\\#+~*_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Main Speak Word API:
- * Tries authentic studio recording first, seamlessly falls back to enhanced SpeechSynthesis.
+ * Zero-latency speech playback using enhanced client-side Web Speech API.
+ * Instant response (0ms) without waiting for remote server roundtrips.
  */
 export async function speakWord(
   text: string,
@@ -186,7 +200,7 @@ export async function speakWord(
 ): Promise<void> {
   if (!text || typeof window === 'undefined') return;
 
-  // Stop any previous audio
+  // Stop any ongoing audio immediately
   if (currentAudioElement) {
     currentAudioElement.pause();
     currentAudioElement.currentTime = 0;
@@ -196,37 +210,8 @@ export async function speakWord(
     window.speechSynthesis.cancel();
   }
 
-  // Check if text is a single word or short phrase eligible for human recording
-  const isSimpleWord = /^[a-zA-Z\s-]+$/.test(text.trim()) && text.trim().split(/\s+/).length <= 2;
+  const clean = cleanTextForSpeech(text);
 
-  if (isSimpleWord) {
-    try {
-      callbacks?.onStart?.();
-      const humanAudioUrl = await fetchHumanAudioUrl(text, dialect);
-
-      if (humanAudioUrl) {
-        const audio = new Audio(humanAudioUrl);
-        currentAudioElement = audio;
-
-        audio.onended = () => {
-          currentAudioElement = null;
-          callbacks?.onEnd?.();
-        };
-
-        audio.onerror = () => {
-          // Fall back to high quality SpeechSynthesis
-          currentAudioElement = null;
-          playSpeechSynthesis(text, dialect, callbacks);
-        };
-
-        await audio.play();
-        return;
-      }
-    } catch {
-      // Fallback
-    }
-  }
-
-  // Fallback to high-quality SpeechSynthesis
-  playSpeechSynthesis(text, dialect, callbacks);
+  // Instant Web Speech Synthesis (0ms delay, no server lag)
+  playSpeechSynthesis(clean || text, dialect, callbacks);
 }
