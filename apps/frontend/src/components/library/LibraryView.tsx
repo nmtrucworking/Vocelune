@@ -32,13 +32,14 @@ import { WordDetailModal } from './WordDetailModal';
 import { Pagination } from '../common/Pagination';
 import { formatRelativeTime } from '@/lib/utils';
 import { AudioButton } from '../common/AudioButton';
+import { FsrsInlineStatus } from './FsrsInlineStatus';
 
 interface LibraryViewProps {
   onOpenQuickAdd: () => void;
 }
 
 export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
-  const { vocabItems, decks, cards, deleteVocabItem, updateVocabItem, batchDeleteVocabItems, batchMoveVocabItems, settings } = useVocelune();
+  const { vocabItems, decks, cards, reviewLogs, deleteVocabItem, updateVocabItem, batchDeleteVocabItems, batchMoveVocabItems, settings } = useVocelune();
 
   // Tab switch: 'my-vocab' | 'manage-topics' | 'community-topics'
   const [activeTab, setActiveTab] = useState<'my-vocab' | 'manage-topics' | 'community-topics'>('my-vocab');
@@ -132,6 +133,16 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
     return new Map(cards.map((c) => [c.vocabItemId, c]));
   }, [cards]);
 
+  // Map review logs by cardId
+  const cardLogsMap = useMemo(() => {
+    const map = new Map<string, typeof reviewLogs>();
+    for (const log of reviewLogs) {
+      if (!map.has(log.cardId)) map.set(log.cardId, []);
+      map.get(log.cardId)!.push(log);
+    }
+    return map;
+  }, [reviewLogs]);
+
   // Paginated vocabulary items
   const totalVocabPages = Math.max(1, Math.ceil(filteredVocab.length / vocabPageSize));
   const paginatedVocab = useMemo(() => {
@@ -196,7 +207,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
   };
 
   return (
-    <div className="space-y-4 max-w-6xl mx-auto">
+    <div className="space-y-4 max-w-7xl mx-auto w-full px-1 sm:px-3">
       {/* Top Header & Tab Navigation */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
@@ -418,11 +429,11 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
           {/* Vocabulary Table */}
           <div className="bg-surface-base border border-slate-200/80 rounded-card overflow-hidden shadow-xs">
             {filteredVocab.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="min-w-[960px] w-full text-left text-xs">
                   <thead className="bg-slate-50 text-text-secondary font-medium border-b border-slate-200/80">
                     <tr>
-                      <th className="py-3 px-3 w-10 text-center">
+                      <th className="py-3 px-3 w-10 text-center shrink-0">
                         <input
                           type="checkbox"
                           checked={isAllPageSelected}
@@ -434,19 +445,22 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                           title="Chọn tất cả từ trên trang này"
                         />
                       </th>
-                      <th className="py-3 px-4">Từ vựng & Phiên âm</th>
-                      <th className="py-3 px-4">Từ loại</th>
-                      <th className="py-3 px-4">Nghĩa tiếng Việt</th>
-                      <th className="py-3 px-4">Chủ đề & Bộ từ</th>
-                      <th className="py-3 px-4">Cấp độ</th>
-                      <th className="py-3 px-4">Trạng thái FSRS</th>
-                      <th className="py-3 px-4 text-center">Hạn ôn</th>
-                      <th className="py-3 px-4 text-right">Thao tác</th>
+                      <th className="py-3 px-3.5 w-[210px] min-w-[180px]">Từ vựng & Phiên âm</th>
+                      <th className="py-3 px-2 w-16 text-text-secondary italic">Từ loại</th>
+                      <th className="py-3 px-3.5 min-w-[160px] max-w-[240px]">Nghĩa tiếng Việt</th>
+                      <th className="py-3 px-3 w-[140px] min-w-[125px]">Chủ đề & Bộ từ</th>
+                      <th className="py-3 px-2 w-16 text-center">Cấp độ</th>
+                      <th className="py-3 px-3 w-[155px] min-w-[145px]">Trạng thái FSRS</th>
+                      <th className="py-3 px-2 w-24 text-center">Hạn ôn</th>
+                      <th className="py-3 px-3 w-16 text-right sticky right-0 bg-slate-50 border-l border-slate-200/60 z-10">
+                        Thao tác
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {paginatedVocab.map((item) => {
                       const card = cardMap.get(item.id);
+                      const cardLogs = card ? cardLogsMap.get(card.id) : undefined;
                       const isDue = card && new Date(card.dueAt).getTime() <= Date.now();
                       const itemDeck = deckMap.get(item.deckId);
                       const isSelected = selectedIds.has(item.id);
@@ -476,13 +490,13 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                           </td>
 
                           {/* Word & Audio */}
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2.5">
+                          <td className="py-3 px-3.5">
+                            <div className="flex items-center gap-2">
                               {item.imageUrl && (
                                 <img
                                   src={item.imageUrl}
                                   alt={item.word}
-                                  className="w-8 h-8 rounded-md object-cover border border-slate-200/80 shadow-2xs shrink-0"
+                                  className="w-7 h-7 rounded object-cover border border-slate-200/80 shadow-2xs shrink-0"
                                 />
                               )}
                               <AudioButton
@@ -490,72 +504,67 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                                 dialect={item.dialect || settings.englishDialect}
                                 size="sm"
                               />
-                              <div>
-                                <span className="font-bold text-sm text-brand-ink">
+                              <div className="truncate">
+                                <span className="font-bold text-xs sm:text-sm text-brand-ink">
                                   {item.word}
                                 </span>
-                                <span className="ml-2 font-mono text-[11px] text-slate-400">
-                                  {item.phonetic}
-                                </span>
+                                {item.phonetic && (
+                                  <span className="ml-1.5 font-mono text-[10px] text-slate-400">
+                                    {item.phonetic}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
 
                           {/* POS */}
-                          <td className="py-3 px-4 italic text-text-secondary">
+                          <td className="py-3 px-2 italic text-[11px] text-text-secondary truncate">
                             {item.partOfSpeech}
                           </td>
 
                           {/* Meaning */}
-                          <td className="py-3 px-4 font-medium text-brand-ink max-w-xs truncate">
+                          <td className="py-3 px-3.5 font-medium text-brand-ink max-w-[240px] truncate" title={item.meaningVi}>
                             {item.meaningVi}
                           </td>
 
                           {/* Topic Group & Deck */}
-                          <td className="py-3 px-4">
+                          <td className="py-3 px-3">
                             <div className="flex flex-col gap-0.5">
                               <span
-                                className="px-2 py-0.5 rounded text-[10px] font-semibold text-slate-700 bg-slate-100 max-w-[140px] truncate"
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-700 bg-slate-100 max-w-[130px] truncate"
                                 style={{
                                   borderLeft: `3px solid ${itemDeck?.color || '#4F46E5'}`,
                                 }}
+                                title={itemDeck?.name || 'Từ vựng'}
                               >
                                 {itemDeck?.name || 'Từ vựng'}
                               </span>
-                              <span className="text-[9px] text-slate-400">
+                              <span className="text-[9px] text-slate-400 truncate max-w-[130px]">
                                 {itemDeck?.topicGroup || 'Chung'}
                               </span>
                             </div>
                           </td>
 
                           {/* CEFR */}
-                          <td className="py-3 px-4">
-                            <span className="px-2 py-0.5 rounded font-bold text-[10px] bg-slate-100 text-slate-700">
-                              {item.cefr}
+                          <td className="py-3 px-2 text-center">
+                            <span
+                              className={`px-1.5 py-0.5 rounded font-extrabold text-[10px] ${
+                                item.cefr && item.cefr !== 'unknown'
+                                  ? 'bg-brand-primarySoft text-brand-primary'
+                                  : 'bg-slate-100 text-slate-400 font-normal'
+                              }`}
+                            >
+                              {item.cefr && item.cefr !== 'unknown' ? item.cefr : '—'}
                             </span>
                           </td>
 
-                          {/* SRS State */}
-                          <td className="py-3 px-4">
-                            {card ? (
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                  card.state === 'review'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : card.state === 'learning'
-                                    ? 'bg-amber-50 text-amber-700'
-                                    : 'bg-brand-primarySoft text-brand-primary'
-                                }`}
-                              >
-                                {card.state}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
+                          {/* FSRS State with Inline Chart */}
+                          <td className="py-3 px-3">
+                            <FsrsInlineStatus card={card} logs={cardLogs} />
                           </td>
 
-                          {/* Due Time - Converted to compact icon badge */}
-                          <td className="py-3 px-4 font-mono text-[11px] text-center">
+                          {/* Due Time */}
+                          <td className="py-3 px-2 font-mono text-[11px] text-center">
                             {card ? (
                               isDue ? (
                                 <span
@@ -567,7 +576,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                               ) : (
                                 <span
                                   title={`Hạn ôn: ${formatRelativeTime(card.dueAt)}`}
-                                  className="inline-flex items-center gap-1 text-[11px] text-text-secondary"
+                                  className="inline-flex items-center gap-1 text-[11px] text-text-secondary whitespace-nowrap"
                                 >
                                   <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                   <span>{formatRelativeTime(card.dueAt)}</span>
@@ -578,8 +587,8 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                             )}
                           </td>
 
-                          {/* Actions - Converted to icon button */}
-                          <td className="py-3 px-4 text-right">
+                          {/* Actions - Sticky Right Column */}
+                          <td className="py-3 px-3 text-right sticky right-0 bg-surface-base group-hover:bg-brand-canvas transition-colors border-l border-slate-100 shadow-[-6px_0_10px_-2px_rgba(0,0,0,0.03)] z-10">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -713,8 +722,12 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
               disabled={isBatchProcessing}
               className="px-3 py-1.5 rounded-lg bg-rose-500/80 hover:bg-rose-600 text-white font-semibold flex items-center gap-1.5 transition-colors active:scale-95 disabled:opacity-50"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Xóa đã chọn</span>
+              {isBatchProcessing ? (
+                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5" />
+              )}
+              <span>{isBatchProcessing ? 'Đang xóa...' : 'Xóa đã chọn'}</span>
             </button>
 
             <button
@@ -780,9 +793,12 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                 type="button"
                 onClick={handleBatchMove}
                 disabled={isBatchProcessing || !batchTargetDeckId}
-                className="px-4 py-1.5 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control text-xs font-bold shadow-xs disabled:opacity-50"
+                className="px-4 py-1.5 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control text-xs font-bold shadow-xs disabled:opacity-50 flex items-center gap-1.5"
               >
-                {isBatchProcessing ? 'Đang chuyển...' : 'Xác nhận chuyển'}
+                {isBatchProcessing && (
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                )}
+                <span>{isBatchProcessing ? 'Đang chuyển...' : 'Xác nhận chuyển'}</span>
               </button>
             </div>
           </div>
