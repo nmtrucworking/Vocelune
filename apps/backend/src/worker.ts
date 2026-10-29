@@ -41,7 +41,17 @@ async function main() {
         const claim = await db.emailOutbox.updateMany({ where: { id: email.id, status: 'pending' }, data: { status: 'sending', lockedAt: new Date(), attempts: { increment: 1 } } });
         if (!claim.count) continue;
         try {
-          await sendEmailDirect({ to: email.to, subject: email.subject, text: decryptEmail(email.text) });
+          const decrypted = decryptEmail(email.text);
+          let emailText = decrypted;
+          let emailHtml: string | undefined = undefined;
+          try {
+            if (decrypted.startsWith('{') && decrypted.endsWith('}')) {
+              const parsed = JSON.parse(decrypted);
+              if (parsed.text) emailText = parsed.text;
+              if (parsed.html) emailHtml = parsed.html;
+            }
+          } catch {}
+          await sendEmailDirect({ to: email.to, subject: email.subject, text: emailText, html: emailHtml });
           await db.emailOutbox.update({ where: { id: email.id }, data: { status: 'sent', sentAt: new Date(), text: '', lockedAt: null } });
         } catch (err) {
           process.stderr.write(`Worker email delivery error to ${email.to}: ${(err as Error).message}\n`);

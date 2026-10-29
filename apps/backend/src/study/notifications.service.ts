@@ -4,6 +4,7 @@ import { Database } from '../common/db';
 import { config } from '../common/config';
 import { encryptEmail } from '../common/crypto';
 import { sendEmailDirect } from '../common/mailer';
+import { studyReminderEmail, dailySummaryEmail } from '../email/vocelune-email';
 
 @Injectable()
 export class NotificationsService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -40,37 +41,23 @@ export class NotificationsService implements OnApplicationBootstrap, OnApplicati
       where: { userId: user.id, dueAt: { lte: new Date() }, suspended: false, deletedAt: null },
     });
     const targetNew = user.settings?.newCardsPerDay ?? 20;
-    const totalVocab = await this.db.vocabItem.count({
-      where: { userId: user.id, deletedAt: null },
+
+    const email = studyReminderEmail({
+      displayName: user.displayName || 'bạn',
+      appOrigin,
+      dateLabel: targetDate,
+      dueCards: dueCount,
+      newCardsAvailable: targetNew,
     });
 
-    const subject = `[Vocelune] ⏰ Nhắc nhở lịch học hôm nay - ${targetDate}`;
-    const text = `Chào ${user.displayName || 'bạn'},
-
-Chúc bạn một buổi sáng tràn đầy năng lượng và hứng khởi! 🌅
-
-Đã đến giờ bắt đầu phiên học từ vựng hôm nay trên Vocelune:
-• Thẻ đến hạn ôn tập (Spaced Repetition): ${dueCount} từ
-• Mục tiêu từ mới mỗi ngày: ${targetNew} từ
-• Tổng quy mô kho từ của bạn: ${totalVocab} từ
-
-💡 Mẹo học sáng nay: Chỉ cần 5 - 10 phút áp dụng phương pháp Active Recall kết hợp thuật toán lặp lại ngắt quãng FSRS vào lúc 06:00 sáng sẽ giúp não bộ kích hoạt liên kết nơ-ron mạnh mẽ gấp 3 lần.
-
-👉 Bắt đầu phiên học ngay tại:
-${appOrigin}/study
-
-Chúc bạn có một ngày học tập và làm việc thật hiệu quả!
-
-—
-Đội ngũ Vocelune
-"Mỗi từ, một nhịp nhớ."`;
+    const payload = JSON.stringify({ text: email.text, html: email.html });
 
     const outbox = await this.db.emailOutbox.create({
       data: {
         userId: user.id,
         to: user.email,
-        subject,
-        text: encryptEmail(text),
+        subject: email.subject,
+        text: encryptEmail(payload),
         status: 'pending',
       },
     });
@@ -78,8 +65,9 @@ Chúc bạn có một ngày học tập và làm việc thật hiệu quả!
     try {
       await sendEmailDirect({
         to: user.email,
-        subject,
-        text,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
       });
       await this.db.emailOutbox.update({
         where: { id: outbox.id },
@@ -140,63 +128,26 @@ Chúc bạn có một ngày học tập và làm việc thật hiệu quả!
 
     const totalReviews = reviews.length;
     const goodEasyCount = reviews.filter(r => r.rating >= 3).length;
-    const accuracy = totalReviews > 0 ? Math.round((goodEasyCount / totalReviews) * 100) : 0;
 
-    const vocabList = reviewedVocab
-      .slice(0, 15)
-      .map(v => `• ${v.word} (${v.partOfSpeech}) ${v.phonetic ? v.phonetic + ' ' : ''}- ${v.meaningVi}`)
-      .join('\n');
+    const email = dailySummaryEmail({
+      displayName: user.displayName || 'bạn',
+      appOrigin,
+      dateLabel: targetDate,
+      reviewCount: totalReviews,
+      goodEasyCount,
+      uniqueWordsReviewed: reviewedVocab.length,
+      addedWords: addedToday.length,
+      words: reviewedVocab.map(v => v.word),
+    });
 
-    const subject = `[Vocelune] 🌙 Tổng kết kiến thức ngày ${targetDate}`;
-
-    let body = '';
-    if (totalReviews === 0) {
-      body = `Chào ${user.displayName || 'bạn'},
-
-Một ngày nữa đã khép lại (${targetDate}). 🌙
-
-Hôm nay Vocelune ghi nhận bạn chưa có lượt ôn tập từ vựng nào.
-Đừng nản lòng nhé! Ngày mai hãy dành ra 5 - 10 phút để tiếp tục hành trình làm chủ ngôn ngữ và duy trì nhịp nhớ ngắt quãng FSRS.
-
-👉 Xem kế hoạch học tập ngày mai tại:
-${appOrigin}/dashboard
-
-Chúc bạn ngủ ngon và có những giấc mơ đẹp!
-
-—
-Đội ngũ Vocelune
-"Mỗi từ, một nhịp nhớ."`;
-    } else {
-      body = `Chào ${user.displayName || 'bạn'},
-
-Chúc mừng bạn đã hoàn thành một ngày học tập và trau dồi tuyệt vời (${targetDate})! 🌙
-
-📊 THỐNG KÊ KẾT QUẢ HÔM NAY:
-• Tổng số lượt ôn tập: ${totalReviews} lượt
-• Tỷ lệ nhớ tốt (Good / Easy): ${accuracy}%
-• Số từ vựng đã củng cố: ${reviewedVocab.length} từ
-${addedToday.length ? `• Số từ mới thêm vào kho: ${addedToday.length} từ\n` : ''}
-📚 DANH SÁCH KIẾN THỨC ĐÃ ÔN TẬP HÔM NAY:
-${vocabList || '• Bạn đã hoàn thành các bài ôn tập trong ngày.'}
-
-💡 Giấc ngủ đêm nay sẽ là khoảng thời gian lý tưởng để bộ não tái củng cố các liên kết synap, biến từ vựng thành phản xạ dài hạn.
-
-👉 Theo dõi chi tiết đường cong quên lãng & tiến độ tại:
-${appOrigin}/analytics
-
-Chúc bạn ngủ thật ngon để sẵn sàng cho một ngày mới hứng khởi!
-
-—
-Đội ngũ Vocelune
-"Mỗi từ, một nhịp nhớ."`;
-    }
+    const payload = JSON.stringify({ text: email.text, html: email.html });
 
     const outbox = await this.db.emailOutbox.create({
       data: {
         userId: user.id,
         to: user.email,
-        subject,
-        text: encryptEmail(body),
+        subject: email.subject,
+        text: encryptEmail(payload),
         status: 'pending',
       },
     });
@@ -204,8 +155,9 @@ Chúc bạn ngủ thật ngon để sẵn sàng cho một ngày mới hứng kh�
     try {
       await sendEmailDirect({
         to: user.email,
-        subject,
-        text: body,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
       });
       await this.db.emailOutbox.update({
         where: { id: outbox.id },

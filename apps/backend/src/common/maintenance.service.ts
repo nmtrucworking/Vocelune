@@ -96,11 +96,21 @@ export class MaintenanceService implements OnApplicationBootstrap, OnApplication
             });
             if (!claim.count) continue;
             try {
-              const plainText = decryptEmail(email.text);
+              const decrypted = decryptEmail(email.text);
+              let emailText = decrypted;
+              let emailHtml: string | undefined = undefined;
+              try {
+                if (decrypted.startsWith('{') && decrypted.endsWith('}')) {
+                  const parsed = JSON.parse(decrypted);
+                  if (parsed.text) emailText = parsed.text;
+                  if (parsed.html) emailHtml = parsed.html;
+                }
+              } catch {}
               await sendEmailDirect({
                 to: email.to,
                 subject: email.subject,
-                text: plainText,
+                text: emailText,
+                html: emailHtml,
               });
               await this.db.emailOutbox.update({
                 where: { id: email.id },

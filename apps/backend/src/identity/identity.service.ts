@@ -8,6 +8,7 @@ import { settingsDto } from '../common/serializers';
 import { encryptEmail } from '../common/crypto';
 import { sendEmailDirect } from '../common/mailer';
 import { config } from '../common/config';
+import { welcomeEmail, passwordResetEmail } from '../email/vocelune-email';
 import { hash, passwordHash, passwordMatches, secret } from './security';
 import { LIBRARY_VERSION, MODEL_VERSION, parameters } from '../study/scheduler';
 
@@ -39,6 +40,41 @@ export class IdentityService {
       await tx.deck.create({ data: { userId: user.id, name: 'Từ vựng của tôi', normalizedName: normalized('Từ vựng của tôi') } });
       return user;
     });
+
+    // Send Welcome Email asynchronously
+    const hasEmailProvider = Boolean(config.RESEND_API_KEY || config.SMTP_HOST || config.SMTP_PASSWORD?.startsWith('re_') || process.env.RESEND_API_KEY);
+    if (hasEmailProvider) {
+      const appOrigin = config.APP_ORIGIN || 'https://vocelune.nguyenminhtruc.site';
+      try {
+        const email = welcomeEmail({
+          displayName: data.displayName,
+          appOrigin,
+        });
+        const payload = JSON.stringify({ text: email.text, html: email.html });
+        void this.db.emailOutbox.create({
+          data: {
+            userId: user.id,
+            to: user.email,
+            subject: email.subject,
+            text: encryptEmail(payload),
+          },
+        }).then(() => {
+          setImmediate(() => {
+            void sendEmailDirect({
+              to: user.email,
+              subject: email.subject,
+              text: email.text,
+              html: email.html,
+            }).catch(err => {
+              process.stderr.write(`Welcome email dispatch error: ${(err as Error).message}\n`);
+            });
+          });
+        }).catch(() => {});
+      } catch (err) {
+        process.stderr.write(`Welcome email generation error: ${(err as Error).message}\n`);
+      }
+    }
+
     return this.createSession(user.id);
   }
   async login(body: unknown) {
@@ -142,17 +178,25 @@ export class IdentityService {
     if (user) {
       const token = secret();
       const appOrigin = config.APP_ORIGIN || 'https://vocelune.nguyenminhtruc.site';
-      const resetText = `Đặt lại mật khẩu trong 30 phút: ${appOrigin}/reset-password#token=${token}`;
+      const resetUrl = `${appOrigin}/reset-password#token=${token}`;
+      const email = passwordResetEmail({
+        displayName: user.displayName || 'bạn',
+        appOrigin,
+        resetUrl,
+        expiresInMinutes: 30,
+      });
+      const payload = JSON.stringify({ text: email.text, html: email.html });
       await this.db.forUser(user.id, async tx => {
         await tx.passwordResetToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } });
         await tx.passwordResetToken.create({ data: { userId: user.id, tokenHash: hash(token), expiresAt: new Date(Date.now() + 30 * 60000) } });
-        await tx.emailOutbox.create({ data: { userId: user.id, to: user.email, subject: 'Đặt lại mật khẩu Vocelune', text: encryptEmail(resetText) } });
+        await tx.emailOutbox.create({ data: { userId: user.id, to: user.email, subject: email.subject, text: encryptEmail(payload) } });
       });
       setImmediate(() => {
         void sendEmailDirect({
           to: user.email,
-          subject: 'Đặt lại mật khẩu Vocelune',
-          text: resetText,
+          subject: email.subject,
+          text: email.text,
+          html: email.html,
         }).catch(err => {
           process.stderr.write(`Password reset email dispatch error: ${(err as Error).message}\n`);
         });
