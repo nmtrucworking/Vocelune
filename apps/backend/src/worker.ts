@@ -8,12 +8,13 @@ import { config } from './common/config';
 import { TransferService } from './transfer/transfer.service';
 import { TestsService } from './tests/tests.service';
 import { MediaService } from './integrations/media.service';
+import { NotificationsService } from './study/notifications.service';
 import { decryptEmail } from './common/crypto';
 
 async function main() {
   if (!config.REDIS_URL) throw new Error('REDIS_URL is required for the worker');
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['warn', 'error'] });
-  const db = app.get(Database), transfer = app.get(TransferService), tests = app.get(TestsService), media = app.get(MediaService);
+  const db = app.get(Database), transfer = app.get(TransferService), tests = app.get(TestsService), media = app.get(MediaService), notifications = app.get(NotificationsService);
   const url = new URL(config.REDIS_URL);
   const connection = { host: url.hostname, port: Number(url.port || 6379), username: url.username || undefined, password: url.password || undefined, ...(url.protocol === 'rediss:' ? { tls: {} } : {}), maxRetriesPerRequest: null };
   const queue = new Queue('vocelune-maintenance-v1', { connection });
@@ -26,6 +27,11 @@ async function main() {
     }
     const expired = await db.testAttempt.findMany({ where: { status: 'in_progress', deadlineAt: { lte: new Date() } }, take: 100 });
     for (const attempt of expired) await tests.submit(attempt.userId, attempt.id);
+    try {
+      await notifications.processScheduledNotifications();
+    } catch (err) {
+      process.stderr.write(`Notification scheduling tick error: ${(err as Error).message}\n`);
+    }
     if (smtp) {
       await db.emailOutbox.updateMany({ where: { status: 'sending', lockedAt: { lt: new Date(Date.now() - 5 * 60000) } }, data: { status: 'pending' } });
       const emails = await db.emailOutbox.findMany({ where: { status: 'pending', attempts: { lt: 5 } }, take: 20 });
