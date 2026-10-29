@@ -2,11 +2,11 @@
 
 import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Volume2, Trash2, Check, Sparkles, Folder, BookOpen, Plus, Image as ImageIcon, Crop, Loader2 } from 'lucide-react';
+import { X, Volume2, Trash2, Check, Sparkles, Folder, BookOpen, Plus, Image as ImageIcon, Crop, Loader2, Wand2 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, PartOfSpeech, CEFRLevel, Deck } from '@/types';
 import { speakWord } from '@/lib/speech';
-import { translateText } from '@/lib/dictionary';
+import { translateText, convertWordToIpa } from '@/lib/dictionary';
 import { DictionaryAttribution } from '../dictionary/DictionaryAttribution';
 import { AudioButton } from '../common/AudioButton';
 import { LexicalMetadataView } from '../dictionary/LexicalMetadataView';
@@ -37,6 +37,21 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
   const [newDeckName, setNewDeckName] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isConvertingIpa, setIsConvertingIpa] = useState(false);
+
+  const handleConvertIpa = async () => {
+    const targetWord = word.trim();
+    if (!targetWord || isConvertingIpa) return;
+    setIsConvertingIpa(true);
+    try {
+      const res = await convertWordToIpa(targetWord, vocab?.dialect || settings.englishDialect);
+      if (res.ipa) {
+        setPhonetic(res.ipa);
+      }
+    } finally {
+      setIsConvertingIpa(false);
+    }
+  };
 
   // Vocab Image & Crop state
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -255,9 +270,22 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-text-secondary">Phiên âm</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-text-secondary">Phiên âm IPA</label>
+                  <button
+                    type="button"
+                    disabled={!word.trim() || isConvertingIpa}
+                    onClick={handleConvertIpa}
+                    className="text-[11px] text-brand-primary hover:underline font-medium flex items-center gap-1 disabled:opacity-50"
+                    title="Tự động lấy hoặc chuyển đổi sang chuẩn IPA"
+                  >
+                    {isConvertingIpa ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                    {isConvertingIpa ? 'Đang lấy...' : 'Lấy IPA'}
+                  </button>
+                </div>
                 <input
                   type="text"
+                  placeholder="/.../"
                   value={phonetic}
                   onChange={(e) => setPhonetic(e.target.value)}
                   className="w-full px-3 py-2 text-xs border rounded-control font-mono focus:border-brand-primary focus:outline-none"

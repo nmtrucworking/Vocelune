@@ -38,6 +38,8 @@ export const INITIAL_SETTINGS: UserSettings = {
   dayStartHour: 4,
   soundEnabled: true,
   autoPronounce: true,
+  emailReminderStudy: true,
+  emailDailySummary: true,
 };
 
 export const INITIAL_VOCAB: VocabItem[] = [

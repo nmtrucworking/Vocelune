@@ -13,6 +13,9 @@ import {
   Camera,
   Trash2,
   Loader2,
+  Mail,
+  Clock,
+  Send,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { Dialect } from '@/types';
@@ -20,6 +23,7 @@ import { DictionaryProvider, useDictionaryProviders } from '@/lib/dictionary';
 import { DictionarySourceSelect } from '../dictionary/DictionarySourceSelect';
 import { speakWord } from '@/lib/speech';
 import { ImageCropModal } from '../common/ImageCropModal';
+import { api } from '@/lib/api';
 
 export function ProfileSettingsView() {
   const { user, settings, updateSettings, uploadAvatar, removeAvatar, logout } = useVocelune();
@@ -41,7 +45,42 @@ export function ProfileSettingsView() {
   const [autoPronounce, setAutoPronounce] = useState(settings.autoPronounce);
   const [timezone, setTimezone] = useState(settings.timezone);
   const [dayStartHour, setDayStartHour] = useState(settings.dayStartHour);
+  const [emailReminderStudy, setEmailReminderStudy] = useState(settings.emailReminderStudy ?? true);
+  const [emailDailySummary, setEmailDailySummary] = useState(settings.emailDailySummary ?? true);
+  const [isTestingReminder, setIsTestingReminder] = useState(false);
+  const [isTestingSummary, setIsTestingSummary] = useState(false);
+  const [testNotificationMsg, setTestNotificationMsg] = useState<string | null>(null);
   const [isSaved, setIsSaved] = useState(false);
+
+  const handleTestReminder = async () => {
+    setIsTestingReminder(true);
+    setTestNotificationMsg(null);
+    try {
+      const res = await api<{ ok: boolean; subject: string }>('/notifications/test-reminder', { method: 'POST' });
+      setTestNotificationMsg(`Đã tạo và đưa email vào hàng đợi gửi: "${res.subject}"`);
+      setTimeout(() => setTestNotificationMsg(null), 5000);
+    } catch (err: any) {
+      setTestNotificationMsg(`Không thể gửi email thử nghiệm: ${err.message || 'Lỗi kết nối'}`);
+      setTimeout(() => setTestNotificationMsg(null), 5000);
+    } finally {
+      setIsTestingReminder(false);
+    }
+  };
+
+  const handleTestSummary = async () => {
+    setIsTestingSummary(true);
+    setTestNotificationMsg(null);
+    try {
+      const res = await api<{ ok: boolean; subject: string }>('/notifications/test-summary', { method: 'POST' });
+      setTestNotificationMsg(`Đã tạo và đưa email vào hàng đợi gửi: "${res.subject}"`);
+      setTimeout(() => setTestNotificationMsg(null), 5000);
+    } catch (err: any) {
+      setTestNotificationMsg(`Không thể gửi email thử nghiệm: ${err.message || 'Lỗi kết nối'}`);
+      setTimeout(() => setTestNotificationMsg(null), 5000);
+    } finally {
+      setIsTestingSummary(false);
+    }
+  };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -97,6 +136,7 @@ export function ProfileSettingsView() {
       desiredRetention: Number(retention),
       newCardsPerDay: Number(newCardsLimit),
       autoPronounce, timezone, dayStartHour, dictionaryProvider, dictionaryFallbackEnabled,
+      emailReminderStudy, emailDailySummary,
     });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2500); } catch { setIsSaved(false); }
@@ -353,6 +393,92 @@ export function ProfileSettingsView() {
                 className="w-4 h-4 accent-brand-primary cursor-pointer"
               />
             </div>
+          </div>
+        </div>
+
+        {/* Email Notifications & Scheduled Reminders */}
+        <div className="bg-surface-base border border-slate-200/90 rounded-card shadow-card p-6 space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4 text-brand-primary" />
+              <h3 className="text-sm font-semibold text-brand-ink">Thông báo & Nhắc nhở lịch học qua Email</h3>
+            </div>
+            <span className="text-[11px] font-semibold text-brand-primary bg-brand-primarySoft px-2.5 py-0.5 rounded-full flex items-center gap-1">
+              <Clock className="w-3 h-3" /> Tự động 06:00 AM & 11:59 PM
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            {/* 06:00 AM Reminder */}
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-brand-ink">⏰ Nhắc nhở lịch học mỗi sáng (06:00 AM)</span>
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">Múi giờ: {timezone}</span>
+                  </div>
+                  <p className="text-[11px] text-text-secondary leading-relaxed">
+                    Tự động gửi email vào lúc 06:00 sáng thông báo số lượng từ cần ôn tập ngắt quãng (FSRS) và mục tiêu từ mới trong ngày.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={emailReminderStudy}
+                  onChange={(e) => setEmailReminderStudy(e.target.checked)}
+                  className="w-4 h-4 accent-brand-primary cursor-pointer mt-1"
+                />
+              </div>
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  disabled={isTestingReminder}
+                  onClick={handleTestReminder}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-control bg-white border border-slate-200 text-slate-700 hover:text-brand-primary hover:border-brand-primary/50 transition-colors disabled:opacity-50"
+                >
+                  {isTestingReminder ? <Loader2 className="w-3 h-3 animate-spin text-brand-primary" /> : <Send className="w-3 h-3" />}
+                  <span>Gửi thử email 06:00 AM</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 11:59 PM Summary */}
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-brand-ink">🌙 Tổng kết kiến thức mỗi tối (11:59 PM)</span>
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">Múi giờ: {timezone}</span>
+                  </div>
+                  <p className="text-[11px] text-text-secondary leading-relaxed">
+                    Tự động gửi email vào lúc 11:59 tối tổng kết danh sách các từ vựng đã ôn luyện, tỷ lệ phản xạ chính xác và tiến độ củng cố trí nhớ dài hạn.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={emailDailySummary}
+                  onChange={(e) => setEmailDailySummary(e.target.checked)}
+                  className="w-4 h-4 accent-brand-primary cursor-pointer mt-1"
+                />
+              </div>
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  disabled={isTestingSummary}
+                  onClick={handleTestSummary}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-control bg-white border border-slate-200 text-slate-700 hover:text-brand-primary hover:border-brand-primary/50 transition-colors disabled:opacity-50"
+                >
+                  {isTestingSummary ? <Loader2 className="w-3 h-3 animate-spin text-brand-primary" /> : <Send className="w-3 h-3" />}
+                  <span>Gửi thử email 11:59 PM</span>
+                </button>
+              </div>
+            </div>
+
+            {testNotificationMsg && (
+              <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 rounded-control text-xs flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{testNotificationMsg}</span>
+              </div>
+            )}
           </div>
         </div>
 

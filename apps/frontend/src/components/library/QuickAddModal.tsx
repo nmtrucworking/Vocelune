@@ -28,6 +28,7 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
   const [deckId, setDeckId] = useState(decks[0]?.id || '');
   const [tags, setTags] = useState('essential'), [notes, setNotes] = useState('');
   const [isSearching, setIsSearching] = useState(false), [saving, setSaving] = useState(false);
+  const [isConvertingIpa, setIsConvertingIpa] = useState(false);
   const [meaningAlternatives, setMeaningAlternatives] = useState<string[]>([]);
   const [isTranslatingMeaning, setIsTranslatingMeaning] = useState(false);
   const [isTranslatingExample, setIsTranslatingExample] = useState(false);
@@ -58,7 +59,9 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
     ...sense, id: `${sense.provider}:${candidate.providerEntryRef}:${sense.providerSenseRef}`, entryRef: candidate.providerEntryRef, pos: candidate.partOfSpeech,
   })));
   const selected = candidates.find(sense => sense.id === selectedSenseId);
-  const selectedPronunciation = selected?.pronunciations.find(p => p.dialect === dialect && p.ipa) ?? selected?.pronunciations.find(p => p.dialect === 'unknown' && p.ipa);
+  const selectedPronunciation = selected?.pronunciations.find(p => p.dialect === dialect && p.ipa)
+    ?? selected?.pronunciations.find(p => p.dialect === 'unknown' && p.ipa)
+    ?? selected?.pronunciations.find(p => Boolean(p.ipa));
   const providerValues = { definitionEn: selected?.definition.value || '', exampleEn: selected?.examples.items[0] || '', phonetic: selectedPronunciation?.ipa || '' };
   const fromProvider = (field: keyof typeof providerValues) => !!(includeProviderContent && selected?.persistFields.includes(field) && providerValues[field]);
   const known = COMMON_WORD_KNOWLEDGE[word.trim().toLowerCase()];
@@ -137,12 +140,39 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
       if (sequence === exampleTranslation.current) setIsTranslatingExample(false);
     }
   };
+  const handleConvertIpa = async () => {
+    const targetWord = word.trim();
+    if (!targetWord || isConvertingIpa) return;
+    setIsConvertingIpa(true);
+    try {
+      const res = await convertWordToIpa(targetWord, dialect);
+      if (res.ipa) {
+        setPhonetic(res.ipa);
+        setLookupNoticeType('info');
+        setLookupMessage(`Đã tạo phiên âm IPA (${res.source === 'datamuse_arpabet' ? 'chuẩn CMU' : 'từ điển'}): ${res.ipa}`);
+      } else {
+        setLookupNoticeType('warning');
+        setLookupMessage('Chưa tìm thấy phiên âm IPA cho từ này. Bạn có thể tự nhập tay theo định dạng /.../.');
+      }
+    } catch {
+      setLookupNoticeType('warning');
+      setLookupMessage('Lỗi khi chuyển đổi IPA. Vui lòng thử lại hoặc nhập tay.');
+    } finally {
+      setIsConvertingIpa(false);
+    }
+  };
   const handleSelectSense = async (sense: typeof candidates[number]) => {
     const sequence = ++meaningTranslation.current;
     exampleTranslation.current++; setIsTranslatingExample(false);
     setSelectedSenseId(sense.id); setIncludeProviderContent(sense.persistFields.length > 0); setMeaningAlternatives([]);
     const dictionaryMeaning = sense.persistFields.includes('meaningVi') ? sense.meaningVi?.value : null;
     setMeaningVi(dictionaryMeaning || '');
+    const ipaFromSense = sense.pronunciations.find(p => p.dialect === dialect && p.ipa)?.ipa
+      ?? sense.pronunciations.find(p => p.dialect === 'unknown' && p.ipa)?.ipa
+      ?? sense.pronunciations.find(p => Boolean(p.ipa))?.ipa;
+    if (ipaFromSense) {
+      setPhonetic(ipaFromSense);
+    }
     if (!dictionaryMeaning && sense.definition.value && sense.persistFields.includes('definitionEn')) {
       setIsTranslatingMeaning(true);
       try {
@@ -323,7 +353,7 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
             {selected.pronunciations.map((pronunciation, i) => <div className="flex items-center gap-2" key={i}><span>{pronunciation.ipa || 'Chưa có IPA'} · {pronunciation.dialect === 'en-us' ? 'Giọng Mỹ' : pronunciation.dialect === 'en-gb' ? 'Giọng Anh' : 'Chưa xác nhận giọng'}</span>{pronunciation.audio.playbackUrl && <button type="button" className="text-brand-primary underline" onClick={() => { const audio = new Audio(pronunciation.audio.playbackUrl); void audio.play().catch(() => { setLookupNoticeType('warning'); setLookupMessage('Không phát được audio của nguồn. Bạn có thể dùng nút phát âm bên cạnh từ.'); }); }}>Nghe từ nguồn</button>}</div>)}
             {selected.persistFields.length > 0 ? <label className="flex items-start gap-2"><input type="checkbox" checked={includeProviderContent} onChange={e => setIncludeProviderContent(e.target.checked)} />Lưu kèm các trường được phép từ nguồn đã chọn; giữ thông tin nguồn và giấy phép.</label> : <p className="text-amber-800">Nghĩa này chỉ để tham khảo. Hãy tự biên soạn các trường bên dưới khi lưu từ.</p>}
           </div>}
-          {known && <div className="rounded-control bg-slate-50 border p-3 text-xs space-y-2"><p>Gợi ý cục bộ, chưa xác minh theo nguồn từ điển: {known.vi}</p><div className="flex gap-3"><button type="button" className="underline text-brand-primary" onClick={() => setMeaningVi(known.vi)}>Dùng gợi ý tiếng Việt</button><button type="button" className="underline text-brand-primary" onClick={() => setCefr(known.cefr)}>Dùng CEFR gợi ý ({known.cefr}, nhập tay)</button></div></div>}
+          {known && <div className="rounded-control bg-slate-50 border p-3 text-xs space-y-2"><p>Gợi ý cục bộ, chưa xác minh theo nguồn từ điển: {known.vi} {known.ipa ? `(${known.ipa})` : ''}</p><div className="flex flex-wrap gap-3"><button type="button" className="underline text-brand-primary" onClick={() => setMeaningVi(known.vi)}>Dùng gợi ý tiếng Việt</button>{known.ipa && <button type="button" className="underline text-brand-primary" onClick={() => setPhonetic(known.ipa!)}>Dùng IPA gợi ý ({known.ipa})</button>}<button type="button" className="underline text-brand-primary" onClick={() => setCefr(known.cefr)}>Dùng CEFR gợi ý ({known.cefr}, nhập tay)</button></div></div>}
           {/* Status Message Pill */}
           {lookupMessage && (
             <div
@@ -358,12 +388,23 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-text-secondary">Phiên âm IPA</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-text-secondary">Phiên âm IPA</label>
+                <button
+                  type="button"
+                  disabled={!word.trim() || isConvertingIpa}
+                  onClick={handleConvertIpa}
+                  className="text-[11px] text-brand-primary hover:underline font-medium flex items-center gap-1 disabled:opacity-50"
+                  title="Tự động lấy hoặc chuyển đổi sang chuẩn IPA"
+                >
+                  {isConvertingIpa ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                  {isConvertingIpa ? 'Đang lấy...' : 'Lấy IPA'}
+                </button>
+              </div>
               <input
                 type="text"
-                placeholder="/.../"
-                value={fromProvider('phonetic') ? providerValues.phonetic : phonetic}
-                readOnly={fromProvider('phonetic')}
+                placeholder={known?.ipa || '/.../'}
+                value={phonetic || (fromProvider('phonetic') ? providerValues.phonetic : '')}
                 onChange={(e) => setPhonetic(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control font-mono focus:outline-none focus:border-brand-primary"
               />
