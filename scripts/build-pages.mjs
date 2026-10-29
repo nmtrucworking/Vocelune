@@ -11,7 +11,7 @@ const publicDir = isInFrontend ? path.resolve('public') : path.resolve('apps/fro
 const redirectsPath = path.join(publicDir, '_redirects');
 
 fs.mkdirSync(publicDir, { recursive: true });
-fs.writeFileSync(redirectsPath, `# Cloudflare Pages Reverse Proxy (200 = Rewrite)\n/api/v1/*  ${cleanTarget}/api/v1/:splat  200\n`);
+fs.writeFileSync(redirectsPath, `# Cloudflare Pages Reverse Proxy (200 = Rewrite)\n/api/v1/*  ${cleanTarget}/api/v1/:splat  200\n/app/*  /:splat  301\n`);
 
 console.log(`[Cloudflare Pages] Configured _redirects -> ${cleanTarget}/api/v1/:splat`);
 

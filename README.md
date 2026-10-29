@@ -22,6 +22,8 @@ npm run dev
 
 `npm run dev` chạy web, API và worker. Có thể chạy riêng bằng `dev:frontend`, `dev:backend`, `worker`. Web proxy `/api/v1` sang API, giữ cookie cùng origin.
 
+Frontend dev dùng `.next-dev`, còn production build dùng `.next`, nên chạy build khi đang dev không làm mất CSS/JavaScript của trang local.
+
 ## Kiểm tra và build
 
 ```bash
@@ -44,6 +46,7 @@ Tests tạo database PostgreSQL có tên ngẫu nhiên, áp dụng toàn bộ mi
 - CSV/XLSX: mẫu, upload, preview từng dòng, import có checkpoint/retry; export CSV/XLSX/JSON. Worker BullMQ xử lý import và email bằng trạng thái bền vững trong PostgreSQL.
 - Dashboard/analytics theo IANA timezone và giờ bắt đầu ngày; retention có mẫu số, no-data rõ ràng; dự báo dùng chính engine FSRS.
 - Adapter Oxford và R2 có kiểm tra cấu hình. Khi chưa có credentials, nhập thủ công vẫn hoạt động; không sinh nghĩa/IPA/CEFR giả.
+- Từ điển đa nguồn: Kaikki/WordNet local, chọn nghĩa theo lĩnh vực/ngữ cảnh, fallback nhiều API, quota dùng chung, cooldown và quyền lưu/xuất từng trường. Xem [cấu hình và nhập dữ liệu từ điển](docs/DICTIONARY.md).
 
 **Scheduler thực tế:** `ts-fsrs` **5.4.2 / FSRS-6**, pin phiên bản và tham số. Nhãn FSRS-7 của bản frontend cũ đã được sửa. Nâng model cần migration và regression tests riêng.
 

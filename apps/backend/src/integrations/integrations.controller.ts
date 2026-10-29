@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Inject, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { Response } from 'express';
 import { AuthRequest, id } from '../common/http';
 import { DictionaryService } from './dictionary.service';
 import { MediaService } from './media.service';
@@ -15,5 +16,6 @@ export class IntegrationsController {
   @Post('media/upload-intents') intent(@Req() r: AuthRequest, @Body() b: unknown) { return this.media.intent(r.auth.userId, b); }
   @Post('media/:id/complete') complete(@Req() r: AuthRequest, @Param('id') a: string) { return this.media.complete(r.auth.userId, id(a)); }
   @Get('media/:id/access') access(@Req() r: AuthRequest, @Param('id') a: string) { return this.media.access(r.auth.userId, id(a)); }
+  @Get('media/:id/content') content(@Req() r: AuthRequest, @Param('id') a: string, @Res() res: Response) { return this.media.streamAsset(r.auth.userId, id(a), res, r.headers?.['if-none-match']); }
   @Post('media/:id/attach') attach(@Req() r: AuthRequest, @Param('id') a: string, @Body() b: unknown) { return this.media.attach(r.auth.userId, id(a), b); }
 }

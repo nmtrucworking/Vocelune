@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Logo } from '@/components/layout/Logo';
 import { Sparkles, ShieldCheck, Database, BookOpen, ExternalLink, Heart } from 'lucide-react';
+import { getWorkspaceUrl } from '@/lib/urls';
 
 export function PublicFooter() {
   return (
@@ -14,7 +15,7 @@ export function PublicFooter() {
           {/* Brand Info (2 cols) */}
           <div className="lg:col-span-2 space-y-4">
             <div className="inline-block bg-white/5 p-2 rounded-xl border border-white/10">
-              <Logo size="md" showTagline href="/" className="brightness-110" />
+              <Logo size="md" showTagline href="/" theme="light" />
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed max-w-sm">
@@ -60,7 +61,7 @@ export function PublicFooter() {
                 </Link>
               </li>
               <li>
-                <Link href="/app/dashboard" className="hover:text-white transition-colors">
+                <Link href={getWorkspaceUrl('/dashboard')} className="hover:text-white transition-colors">
                   Bàn học cá nhân
                 </Link>
               </li>

@@ -5,6 +5,7 @@ import { Database, json, Tx } from '../common/db';
 import { fail, normalized, pagination, uuid } from '../common/http';
 import { cardDto, deckDto, publicDeckDto, vocabDto } from '../common/serializers';
 import { hash } from '../identity/security';
+import { redactForSharing } from '../integrations/dictionary/license-policy';
 
 export const pos = z.enum(['noun', 'verb', 'adjective', 'adverb', 'phrase', 'idiom', 'preposition', 'conjunction', 'other']);
 export const cefr = z.enum(['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'unknown']);
@@ -102,7 +103,10 @@ export class VocabularyService {
       const senseKey = this.senseKey(next);
       const duplicate = await tx.vocabItem.findFirst({ where: { userId, lexemeId: lexeme.id, senseKey, deletedAt: null, id: { not: vocabId } } });
       if (duplicate) fail(409, 'DUPLICATE_SENSE', 'Nghĩa này đã tồn tại.', { existingId: duplicate.id });
-      const item = await tx.vocabItem.update({ where: { id: vocabId }, data: { ...fields, lexemeId: lexeme.id, senseKey, ...(fields.cefr ? { cefrSource: fields.cefr === 'unknown' ? 'unknown' : 'manual' } : {}) }, include: { decks: true } });
+      const changedSense = next.word !== previous.word || next.partOfSpeech !== previous.partOfSpeech || next.definitionEn !== previous.definitionEn;
+      const item = await tx.vocabItem.update({ where: { id: vocabId }, data: { ...fields, lexemeId: lexeme.id, senseKey,
+        ...(changedSense ? { lexicalMetadata: Prisma.DbNull } : {}),
+        ...(fields.cefr ? { cefrSource: fields.cefr === 'unknown' ? 'unknown' : 'manual' } : {}) }, include: { decks: true } });
       // Invalidate reveal tokens/previews when question content changes.
       await tx.card.updateMany({ where: { vocabItemId: vocabId }, data: { version: { increment: 1 } } });
       return vocabDto(item);
@@ -272,7 +276,7 @@ export class VocabularyService {
     const decks = await this.db.deck.findMany({
       where,
       include: {
-        user: { select: { displayName: true } },
+        user: { select: { id: true, displayName: true, avatarAssetId: true } },
         _count: { select: { items: true } },
       },
       orderBy: [{ forkCount: 'desc' }, { createdAt: 'desc' }],
@@ -291,7 +295,7 @@ export class VocabularyService {
     const deck = await this.db.deck.findFirst({
       where: { id: deckId, isPublic: true, deletedAt: null },
       include: {
-        user: { select: { displayName: true } },
+        user: { select: { id: true, displayName: true, avatarAssetId: true } },
         _count: { select: { items: true } },
         items: {
           take: 40,
@@ -307,6 +311,9 @@ export class VocabularyService {
                 exampleEn: true,
                 cefr: true,
                 dialect: true,
+                sourceKind: true,
+                provenance: true,
+                lexicalMetadata: true,
               },
             },
           },
@@ -325,7 +332,7 @@ export class VocabularyService {
     return {
       ...publicDeckDto(deck),
       cefrStats,
-      sampleWords: deck.items.map(it => it.vocabItem),
+      sampleWords: deck.items.map(it => redactForSharing(it.vocabItem)),
     };
   }
 
@@ -369,7 +376,7 @@ export class VocabularyService {
 
       let importedWordsCount = 0;
       for (const item of sourceDeck.items) {
-        const src = item.vocabItem;
+        const src = redactForSharing(item.vocabItem);
         if (src.deletedAt) continue;
 
         const normWord = normalized(src.word);
@@ -407,8 +414,9 @@ export class VocabularyService {
               cefrSource: src.cefrSource,
               tags: src.tags,
               notes: src.notes,
-              sourceKind: 'user',
-              provenance: { kind: 'fork', sourceDeckId: deckId },
+              sourceKind: src.sourceKind,
+              provenance: json({ ...(src.provenance && typeof src.provenance === 'object' ? src.provenance : {}), kind: 'fork', sourceDeckId: deckId }),
+              lexicalMetadata: src.lexicalMetadata === null ? Prisma.DbNull : json(src.lexicalMetadata),
               decks: { create: [{ deckId: newDeck.id }] },
               cards: {
                 create: [{ userId, template: 'en_vi', schedulerConfigId: scheduler.id }],

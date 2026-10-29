@@ -24,7 +24,8 @@
     "db:generate": "npm run db:generate --workspace=@vocelune/backend",
     "db:migrate": "npm run db:migrate --workspace=@vocelune/backend",
     "db:seed": "npm run db:seed --workspace=@vocelune/backend",
-    "smoke:worker": "node scripts/smoke-worker.mjs"
+    "smoke:worker": "node scripts/smoke-worker.mjs",
+    "dictionary:import": "npm run dictionary:import --workspace=@vocelune/backend --"
   },
   "engines": {
     "node": ">=22.19.0"

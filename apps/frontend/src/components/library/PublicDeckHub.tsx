@@ -268,7 +268,12 @@ export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
 
                   {/* Author & Word Count */}
                   <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium pt-3 mt-1 border-t border-slate-100">
-                    <span>Tác giả: <strong>{deck.authorName || 'Cộng đồng'}</strong></span>
+                    <span className="flex items-center gap-1.5">
+                      {deck.authorAvatarUrl ? (
+                        <img src={deck.authorAvatarUrl} alt={deck.authorName} className="w-4 h-4 rounded-full object-cover ring-1 ring-slate-200" />
+                      ) : null}
+                      <span>Tác giả: <strong>{deck.authorName || 'Cộng đồng'}</strong></span>
+                    </span>
                     <span className="px-1.5 py-0.5 rounded bg-brand-canvas text-brand-primary font-bold">
                       {deck.itemCount || 0} từ
                     </span>

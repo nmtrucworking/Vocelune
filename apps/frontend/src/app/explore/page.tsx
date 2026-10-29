@@ -265,13 +265,7 @@ export default function ExplorePage() {
     api<{ items: Deck[] }>('/decks/public')
       .then((res) => {
         if (active && res.items && res.items.length > 0) {
-          // Merge API decks with curated decks
-          const apiIds = new Set(res.items.map((d) => d.id));
-          const merged = [
-            ...res.items,
-            ...EXTRA_CURATED_DECKS.filter((d) => !apiIds.has(d.id)),
-          ];
-          setDecks(merged);
+          setDecks(res.items);
         }
       })
       .catch(() => {
@@ -359,7 +353,7 @@ export default function ExplorePage() {
       setForkSuccessDeckId(deckId);
       setTimeout(() => {
         setForkSuccessDeckId(null);
-        router.push('/app/study');
+        router.push('/study');
       }, 1200);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Không thể lưu bộ từ vào thư viện.');

@@ -1,4 +1,4 @@
-import type { DictionaryAttribution, DictionaryProvider } from '@/lib/dictionary';
+import type { DictionaryAttribution, DictionaryProvider, LexicalMetadata } from '@/lib/dictionary';
 
 export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | 'unknown';
 
@@ -44,6 +44,7 @@ export interface VocabItem {
   cefr: CEFRLevel;
   sourceKind?: 'user' | 'licensed';
   provenance?: { provider?: DictionaryProvider; attribution?: DictionaryAttribution[]; persistedFields?: string[]; exportableFields?: string[]; licenseMode?: string } | null;
+  lexicalMetadata?: Partial<LexicalMetadata> | null;
   cefrSource?: 'verified_3000' | 'verified_5000' | 'manual' | 'unknown';
   deckId: string;
   tags: string[];
@@ -63,6 +64,7 @@ export interface Deck {
   forkCount?: number;
   itemCount?: number;
   authorName?: string;
+  authorAvatarUrl?: string | null;
   createdAt: string;
 }
 
@@ -136,6 +138,8 @@ export interface TestAttempt {
 
 export interface UserSettings {
   displayName: string;
+  avatarAssetId?: string | null;
+  avatarUrl?: string | null;
   timezone: string;
   englishDialect: Dialect;
   dictionaryProvider: DictionaryProvider;

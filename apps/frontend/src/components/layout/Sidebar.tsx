@@ -27,13 +27,13 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
 
   const navItems = [
     {
-      href: '/app/dashboard',
+      href: '/dashboard',
       label: 'Tổng quan',
       icon: LayoutDashboard,
       badge: null,
     },
     {
-      href: '/app/study',
+      href: '/study',
       label: 'Học SRS',
       icon: Brain,
       badge: dueCards.length > 0 ? `${dueCards.length}` : null,
@@ -41,32 +41,32 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
       highlight: dueCards.length > 0,
     },
     {
-      href: '/app/library',
+      href: '/library',
       label: 'Thư viện',
       icon: BookOpen,
       badge: `${vocabItems.length}`,
       badgeColor: 'bg-surface-muted text-text-secondary',
     },
     {
-      href: '/app/tests',
+      href: '/tests',
       label: 'Kiểm tra',
       icon: CheckSquare,
       badge: null,
     },
     {
-      href: '/app/analytics',
+      href: '/analytics',
       label: 'Phân tích',
       icon: BarChart3,
       badge: null,
     },
     {
-      href: '/app/import',
+      href: '/import',
       label: 'Nhập / Xuất',
       icon: FileSpreadsheet,
       badge: null,
     },
     {
-      href: '/app/profile',
+      href: '/profile',
       label: 'Hồ sơ & Cài đặt',
       icon: Settings,
       badge: null,
@@ -78,13 +78,13 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
       <div className="space-y-6">
         {/* Brand Logo */}
         <div className="px-2">
-          <Logo size="md" showTagline href="/app/dashboard" />
+          <Logo size="md" showTagline href="/dashboard" />
         </div>
 
         {/* Navigation Links */}
         <nav className="space-y-1">
           {navItems.map((item) => {
-            const isActive = pathname === item.href || (item.href !== '/app/dashboard' && pathname.startsWith(item.href));
+            const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
             const Icon = item.icon;
 
             return (
@@ -144,7 +144,7 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
               Bạn có <strong>{dueCards.length} thẻ</strong> sẵn sàng để củng cố trí nhớ hôm nay.
             </p>
             <Link
-              href="/app/study"
+              href="/study"
               className="block text-center py-1.5 px-2 bg-brand-primary text-white rounded-lg font-medium text-xs hover:bg-brand-primaryHover transition-colors shadow-xs"
             >
               Ôn ngay

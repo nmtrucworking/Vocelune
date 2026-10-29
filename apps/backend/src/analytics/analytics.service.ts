@@ -60,7 +60,8 @@ export class AnalyticsService {
       metadata: { calculationVersion: 1, successPolicy: 'rating>=3; state_before=review; source=srs_study; voided excluded', sampleSize: reviewLogs.length, timezone: settings.timezone, dayStartHour: settings.dayStartHour, timezonePolicy: 'recompute_history_in_current_profile_timezone', dateRange: { start, end: now }, updatedAt: now } };
   }
   async bootstrap(userId: string) {
-    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, include: { settings: true } });
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, include: { settings: true, avatarAsset: true } });
+    const hasAvatar = !!(user.avatarAsset && user.avatarAsset.status === 'ready' && !user.avatarAsset.deletedAt);
     const [vocabulary, decks, cards, reviewLogs, attempts, overview, queue] = await Promise.all([
       this.db.vocabItem.findMany({ where: { userId, deletedAt: null }, include: { decks: true }, orderBy: { createdAt: 'desc' } }),
       this.db.deck.findMany({ where: { userId, deletedAt: null }, orderBy: { createdAt: 'asc' } }),
@@ -69,8 +70,24 @@ export class AnalyticsService {
       this.db.testAttempt.findMany({ where: { userId, status: { not: 'in_progress' } }, include: { questions: { orderBy: { ordinal: 'asc' } }, definition: true }, orderBy: { startedAt: 'desc' }, take: 100 }),
       this.overview(userId), this.study.queue(userId),
     ]);
-    return { user: { id: user.id, email: user.email, displayName: user.displayName }, vocabItems: vocabulary.map(vocabDto), decks: decks.map(deckDto), cards: cards.map(cardDto), reviewLogs: reviewLogs.map(reviewDto), testAttempts: attempts.map(a => this.tests.dto(a)), settings: settingsDto(user.settings!, user.displayName), overview, dueCards: queue.cards,
-      historyLimits: { reviewLogs: 10000, testAttempts: 100 } };
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        avatarAssetId: hasAvatar ? user.avatarAssetId : null,
+        avatarUrl: hasAvatar ? `/api/v1/users/${user.id}/avatar?v=${user.avatarAssetId}` : null,
+      },
+      vocabItems: vocabulary.map(vocabDto),
+      decks: decks.map(deckDto),
+      cards: cards.map(cardDto),
+      reviewLogs: reviewLogs.map(reviewDto),
+      testAttempts: attempts.map(a => this.tests.dto(a)),
+      settings: settingsDto(user.settings!, user.displayName),
+      overview,
+      dueCards: queue.cards,
+      historyLimits: { reviewLogs: 10000, testAttempts: 100 },
+    };
   }
   async reviews(userId: string) { const overview = await this.overview(userId); return { items: overview.activityHeatmap, metadata: overview.metadata }; }
   async testAnalytics(userId: string) {

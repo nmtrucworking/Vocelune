@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Logo } from '@/components/layout/Logo';
 import { useVocelune } from '@/context/VoceluneContext';
+import { getWorkspaceUrl } from '@/lib/urls';
 
 interface PublicNavbarProps {
   activeSection?: string;
@@ -71,7 +72,7 @@ export function PublicNavbar({ activeSection }: PublicNavbarProps) {
                 Xin chào, <strong className="text-brand-ink">{user.displayName || user.email.split('@')[0]}</strong>
               </span>
               <Link
-                href="/app/dashboard"
+                href={getWorkspaceUrl('/dashboard')}
                 className="px-4 py-2 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 group"
               >
                 <span>Vào bàn học</span>
@@ -81,13 +82,13 @@ export function PublicNavbar({ activeSection }: PublicNavbarProps) {
           ) : (
             <div className="flex items-center gap-2.5">
               <Link
-                href="/login"
+                href={getWorkspaceUrl('/login')}
                 className="text-xs font-semibold text-text-secondary hover:text-brand-ink px-3 py-2 transition-colors rounded-lg hover:bg-slate-100/60"
               >
                 Đăng nhập
               </Link>
               <Link
-                href="/register"
+                href={getWorkspaceUrl('/register')}
                 className="px-4 py-2 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control font-semibold text-xs shadow-sm transition-all duration-150 flex items-center gap-1.5 group"
               >
                 <span>Bắt đầu học</span>
@@ -101,7 +102,7 @@ export function PublicNavbar({ activeSection }: PublicNavbarProps) {
         <div className="flex sm:hidden items-center gap-2">
           {user && (
             <Link
-              href="/app/dashboard"
+              href={getWorkspaceUrl('/dashboard')}
               className="p-2 text-brand-primary bg-brand-primarySoft rounded-lg text-xs font-semibold"
               title="Vào bàn học"
             >
@@ -138,7 +139,7 @@ export function PublicNavbar({ activeSection }: PublicNavbarProps) {
           <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
             {user ? (
               <Link
-                href="/app/dashboard"
+                href={getWorkspaceUrl('/dashboard')}
                 onClick={() => setMobileMenuOpen(false)}
                 className="w-full py-2.5 px-4 bg-brand-primary text-white rounded-control font-semibold text-sm text-center flex items-center justify-center gap-2 shadow-sm"
               >
@@ -148,7 +149,7 @@ export function PublicNavbar({ activeSection }: PublicNavbarProps) {
             ) : (
               <>
                 <Link
-                  href="/login"
+                  href={getWorkspaceUrl('/login')}
                   onClick={() => setMobileMenuOpen(false)}
                   className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-brand-ink rounded-control font-semibold text-sm text-center transition-colors"
                 >

@@ -21,18 +21,18 @@ import { MediaService } from './integrations/media.service';
 import { AnalyticsController } from './analytics/analytics.controller';
 import { AnalyticsService } from './analytics/analytics.service';
 
-@Module({ controllers: [IdentityController], providers: [IdentityService], exports: [IdentityService] })
-export class IdentityModule {}
 @Module({ controllers: [VocabularyController], providers: [VocabularyService], exports: [VocabularyService] })
 export class VocabularyModule {}
+@Module({ imports: [VocabularyModule], controllers: [IntegrationsController], providers: [DictionaryService, DictionaryTransport, MediaService], exports: [MediaService] })
+export class IntegrationsModule {}
+@Module({ imports: [IntegrationsModule], controllers: [IdentityController], providers: [IdentityService], exports: [IdentityService] })
+export class IdentityModule {}
 @Module({ controllers: [StudyController], providers: [StudyService], exports: [StudyService] })
 export class StudyModule {}
 @Module({ imports: [StudyModule], controllers: [TestsController], providers: [TestsService], exports: [TestsService] })
 export class TestsModule {}
 @Module({ imports: [VocabularyModule, TestsModule], controllers: [TransferController], providers: [TransferService], exports: [TransferService] })
 export class TransferModule {}
-@Module({ imports: [VocabularyModule], controllers: [IntegrationsController], providers: [DictionaryService, DictionaryTransport, MediaService], exports: [MediaService] })
-export class IntegrationsModule {}
 @Module({ imports: [StudyModule, TestsModule], controllers: [AnalyticsController], providers: [AnalyticsService] })
 export class AnalyticsModule {}
 @Controller('health')

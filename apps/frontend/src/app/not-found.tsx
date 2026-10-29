@@ -54,7 +54,7 @@ export default function NotFound() {
           </Link>
 
           <Link
-            href="/app/dashboard"
+            href="/dashboard"
             className="flex items-center justify-between p-3 rounded-control bg-brand-primarySoft hover:bg-brand-primarySoft/80 border border-brand-primary/20 text-xs font-semibold text-brand-primary transition-colors group"
           >
             <div className="flex items-center gap-2.5">

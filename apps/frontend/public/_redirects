@@ -1,2 +1,3 @@
 # Cloudflare Pages Reverse Proxy (200 = Rewrite)
 /api/v1/*  https://vocelune-api.onrender.com/api/v1/:splat  200
+/app/*  /:splat  301

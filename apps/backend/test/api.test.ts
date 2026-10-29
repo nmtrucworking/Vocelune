@@ -220,6 +220,65 @@ test('R2 adapter verifies ownership, file signatures and immutable object keys b
   (media as any).client = undefined;
 });
 
+test('user avatar upload to R2, attachment, streaming proxy and cleanup on delete', async () => {
+  const { S3Client, HeadObjectCommand, GetObjectCommand, CopyObjectCommand } = await import('@aws-sdk/client-s3');
+  const { MediaService } = await import('../src/integrations/media.service');
+  const media = app.get(MediaService);
+  const client = new S3Client({ region: 'auto', endpoint: 'https://storage.invalid', credentials: { accessKeyId: 'test', secretAccessKey: 'test' } });
+  const jpeg = Buffer.from([255, 216, 255, 224, 0, 16, 74, 70, 73, 70]);
+  client.send = (async (command: any) => {
+    if (command instanceof HeadObjectCommand) return { ContentLength: jpeg.length, ContentType: 'image/jpeg', ETag: 'etag-avatar' };
+    if (command instanceof GetObjectCommand) return { Body: { transformToByteArray: async () => jpeg } };
+    if (command instanceof CopyObjectCommand) return {};
+    throw new Error('Unexpected S3 call');
+  }) as any;
+  (media as any).client = client;
+
+  const eve = await register('eve');
+  const asset = await db.mediaAsset.create({
+    data: {
+      userId: eve.userId,
+      objectKey: `${eve.userId}/pending/avatar`,
+      purpose: 'avatar',
+      mime: 'image/jpeg',
+      sizeBytes: jpeg.length,
+      expiresAt: new Date(Date.now() + 60000),
+    },
+  });
+
+  // Verify and complete asset in R2
+  await post(`/media/${asset.id}/complete`, eve).expect(201);
+
+  // Set as avatar
+  const setRes = await post('/me/avatar', eve, { assetId: asset.id }).expect(201);
+  assert.equal(setRes.body.avatarAssetId, asset.id);
+  assert.ok(setRes.body.avatarUrl.includes(eve.userId));
+
+  // Check me and bootstrap include avatar
+  const meRes = await get('/me', eve).expect(200);
+  assert.equal(meRes.body.avatarAssetId, asset.id);
+  assert.equal(meRes.body.avatarUrl, setRes.body.avatarUrl);
+
+  const bootRes = await get('/bootstrap', eve).expect(200);
+  assert.equal(bootRes.body.user.avatarAssetId, asset.id);
+  assert.equal(bootRes.body.user.avatarUrl, setRes.body.avatarUrl);
+
+  // Stream avatar via public proxy endpoint
+  const imgRes = await http.get(`/api/v1/users/${eve.userId}/avatar`).expect(200);
+  assert.equal(imgRes.headers['content-type'], 'image/jpeg');
+  assert.equal(imgRes.headers['etag'], 'etag-avatar');
+  assert.ok(imgRes.headers['cache-control'].includes('public'));
+
+  // Delete avatar
+  await http.delete('/api/v1/me/avatar').set(auth(eve)).expect(200);
+  const meAfterDelete = await get('/me', eve).expect(200);
+  assert.equal(meAfterDelete.body.avatarAssetId, null);
+  assert.equal(meAfterDelete.body.avatarUrl, null);
+
+  // Clean up
+  (media as any).client = undefined;
+});
+
 test('account deletion with cards, review events and tests cascades without breaking immutable history triggers', async () => {
   const dana = await register('dana');
   const word = await createWord(dana, 'privacy', 'quyền riêng tư');

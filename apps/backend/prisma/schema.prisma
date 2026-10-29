@@ -11,6 +11,8 @@ model User {
   passwordHash String
   displayName String @db.VarChar(100)
   role String @default("learner")
+  avatarAssetId String? @db.Uuid
+  avatarAsset MediaAsset? @relation("UserAvatar", fields: [avatarAssetId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   settings UserSettings?
   sessions AuthSession[]
@@ -24,8 +26,9 @@ model User {
   testDefinitions TestDefinition[]
   testAttempts TestAttempt[]
   imports ImportJob[]
-  media MediaAsset[]
+  media MediaAsset[] @relation("UserMedia")
   outbox EmailOutbox[]
+  @@index([avatarAssetId])
 }
 model UserSettings {
   userId String @id @db.Uuid
@@ -107,6 +110,7 @@ model VocabItem {
   notes String @default("")
   sourceKind String @default("user")
   provenance Json?
+  lexicalMetadata Json?
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
@@ -296,7 +300,7 @@ model ImportJob {
 model MediaAsset {
   id String @id @default(uuid()) @db.Uuid
   userId String @db.Uuid
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation("UserMedia", fields: [userId], references: [id], onDelete: Cascade)
   objectKey String @unique
   mime String
   sizeBytes Int
@@ -306,6 +310,7 @@ model MediaAsset {
   expiresAt DateTime @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
   vocabulary VocabMedia[]
+  usersWithAvatar User[] @relation("UserAvatar")
   @@index([userId, status])
 }
 model VocabMedia {
@@ -354,4 +359,28 @@ model DictionaryQuota {
   day String @db.VarChar(10)
   used Int @default(0)
   @@id([provider, day])
+}
+
+// Only imported open-licensed content belongs here. Online LIVE_ONLY responses
+// are never inserted into this shared store.
+model DictionaryEntry {
+  id String @id @default(uuid()) @db.Uuid
+  provider String
+  entryRef String
+  lemma String @db.VarChar(100)
+  normalized String @db.VarChar(100)
+  partOfSpeech String
+  datasetVersion String
+  candidate Json
+  importedAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([provider, entryRef])
+  @@index([normalized, partOfSpeech, provider])
+}
+
+model DictionaryProviderHealth {
+  provider String @id
+  failures Int @default(0)
+  blockedUntil DateTime? @db.Timestamptz(3)
+  reason String?
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 }

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { DateTime } from 'luxon';
 import { dictionaryProvider } from '../integrations/dictionary/contracts';
 import { Database, json } from '../common/db';
-import { fail, normalized } from '../common/http';
+import { fail, normalized, uuid } from '../common/http';
 import { settingsDto } from '../common/serializers';
 import { encryptEmail } from '../common/crypto';
 import { config } from '../common/config';
@@ -13,6 +13,7 @@ import { LIBRARY_VERSION, MODEL_VERSION, parameters } from '../study/scheduler';
 export const credentials = z.object({ email: z.string().trim().email().max(254).transform(normalized), password: z.string().min(12).max(128) }).strict();
 export const settingsSchema = z.object({
   displayName: z.string().trim().min(1).max(100).optional(),
+  avatarAssetId: z.string().uuid().nullable().optional(),
   timezone: z.string().refine(zone => DateTime.now().setZone(zone).isValid, 'Invalid IANA timezone').optional(),
   dictionaryProvider: dictionaryProvider.optional(), dictionaryFallbackEnabled: z.boolean().optional(),
   englishDialect: z.enum(['en-us', 'en-gb']).optional(), desiredRetention: z.number().min(0.85).max(0.95).optional(),
@@ -47,13 +48,45 @@ export class IdentityService {
     return this.createSession(user.id);
   }
   async me(userId: string) {
-    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, include: { settings: true } });
-    return { id: user.id, email: user.email, displayName: user.displayName, role: user.role, createdAt: user.createdAt, settings: settingsDto(user.settings!, user.displayName) };
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, include: { settings: true, avatarAsset: true } });
+    const hasAvatar = !!(user.avatarAsset && user.avatarAsset.status === 'ready' && !user.avatarAsset.deletedAt);
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+      avatarAssetId: hasAvatar ? user.avatarAssetId : null,
+      avatarUrl: hasAvatar ? `/api/v1/users/${user.id}/avatar?v=${user.avatarAssetId}` : null,
+      createdAt: user.createdAt,
+      settings: settingsDto(user.settings!, user.displayName),
+    };
   }
   async update(userId: string, body: unknown) {
-    const { displayName, ...data } = settingsSchema.parse(body);
+    const { displayName, avatarAssetId, ...data } = settingsSchema.parse(body);
     await this.db.forUser(userId, async tx => {
-      if (displayName) await tx.user.update({ where: { id: userId }, data: { displayName } });
+      const userUpdates: { displayName?: string; avatarAssetId?: string | null } = {};
+      if (displayName) userUpdates.displayName = displayName;
+      if (avatarAssetId !== undefined) {
+        if (avatarAssetId !== null) {
+          const asset = await tx.mediaAsset.findFirst({
+            where: { id: avatarAssetId, userId, status: 'ready', deletedAt: null },
+          });
+          if (!asset) fail(404, 'NOT_FOUND', 'Không tìm thấy ảnh đã tải lên.');
+          if (asset.purpose !== 'avatar') fail(422, 'INVALID_PURPOSE', 'Tệp ảnh không dùng cho mục đích đại diện.');
+        }
+        const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+        if (user.avatarAssetId && user.avatarAssetId !== avatarAssetId) {
+          const old = await tx.mediaAsset.findUnique({ where: { id: user.avatarAssetId } });
+          if (old) {
+            await tx.mediaAsset.update({ where: { id: old.id }, data: { deletedAt: new Date() } });
+            await tx.auditLog.create({ data: { action: 'media.cleanup', resourceId: old.objectKey } });
+          }
+        }
+        userUpdates.avatarAssetId = avatarAssetId;
+      }
+      if (Object.keys(userUpdates).length > 0) {
+        await tx.user.update({ where: { id: userId }, data: userUpdates });
+      }
       const previous = await tx.userSettings.findUniqueOrThrow({ where: { userId } });
       await tx.userSettings.update({ where: { userId }, data });
       if (data.desiredRetention !== undefined && data.desiredRetention !== previous.desiredRetention) {
@@ -62,6 +95,42 @@ export class IdentityService {
       }
     });
     return (await this.me(userId)).settings;
+  }
+  async setAvatar(userId: string, body: unknown) {
+    const { assetId } = z.object({ assetId: uuid }).strict().parse(body);
+    return this.db.forUser(userId, async tx => {
+      const asset = await tx.mediaAsset.findFirst({
+        where: { id: assetId, userId, status: 'ready', deletedAt: null },
+      });
+      if (!asset) fail(404, 'NOT_FOUND', 'Không tìm thấy ảnh đã tải lên.');
+      if (asset.purpose !== 'avatar') fail(422, 'INVALID_PURPOSE', 'Tệp ảnh không dùng cho mục đích đại diện.');
+
+      const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+      if (user.avatarAssetId && user.avatarAssetId !== assetId) {
+        const old = await tx.mediaAsset.findUnique({ where: { id: user.avatarAssetId } });
+        if (old) {
+          await tx.mediaAsset.update({ where: { id: old.id }, data: { deletedAt: new Date() } });
+          await tx.auditLog.create({ data: { action: 'media.cleanup', resourceId: old.objectKey } });
+        }
+      }
+
+      await tx.user.update({ where: { id: userId }, data: { avatarAssetId: assetId } });
+      return { ok: true, avatarAssetId: assetId, avatarUrl: `/api/v1/users/${userId}/avatar?v=${assetId}` };
+    });
+  }
+  async removeAvatar(userId: string) {
+    return this.db.forUser(userId, async tx => {
+      const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+      if (user.avatarAssetId) {
+        const old = await tx.mediaAsset.findUnique({ where: { id: user.avatarAssetId } });
+        if (old) {
+          await tx.mediaAsset.update({ where: { id: old.id }, data: { deletedAt: new Date() } });
+          await tx.auditLog.create({ data: { action: 'media.cleanup', resourceId: old.objectKey } });
+        }
+        await tx.user.update({ where: { id: userId }, data: { avatarAssetId: null } });
+      }
+      return { ok: true, avatarAssetId: null, avatarUrl: null };
+    });
   }
   async forgot(body: unknown) {
     const { email } = credentials.pick({ email: true }).parse(body);
@@ -97,6 +166,7 @@ export class IdentityService {
     const user = await this.db.user.findUniqueOrThrow({ where: { id: userId } });
     if (!await passwordMatches(password, user.passwordHash)) fail(403, 'INVALID_PASSWORD', 'Mật khẩu không chính xác.');
     await this.db.forUser(userId, async tx => {
+      await tx.user.update({ where: { id: userId }, data: { avatarAssetId: null } });
       // Preserve media cleanup keys without keeping user content or identifying data.
       const assets = await tx.mediaAsset.findMany({ where: { userId } });
       for (const asset of assets) await tx.auditLog.create({ data: { action: 'media.cleanup', resourceId: asset.objectKey } });

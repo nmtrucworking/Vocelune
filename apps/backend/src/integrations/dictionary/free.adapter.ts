@@ -7,7 +7,7 @@ const licenseSchema = z.object({ name: z.string(), url: z.string() });
 const responseSchema = z.array(z.object({
   word: z.string(), phonetic: z.string().optional(), license: licenseSchema.optional(), sourceUrls: z.array(z.string()).optional(),
   phonetics: z.array(z.object({ text: z.string().optional(), audio: z.string().optional(), sourceUrl: z.string().optional(), license: licenseSchema.optional() })).optional(),
-  meanings: z.array(z.object({ partOfSpeech: z.string(), definitions: z.array(z.object({ definition: z.string(), example: z.string().optional() })) })),
+  meanings: z.array(z.object({ partOfSpeech: z.string(), definitions: z.array(z.object({ definition: z.string(), example: z.string().optional(), synonyms: z.array(z.string()).optional(), antonyms: z.array(z.string()).optional() })) })),
 }));
 // Only accept declared, recognized text licenses with a traceable Wiktionary source.
 function textAttribution(license: z.infer<typeof licenseSchema> | undefined, sources: string[]): Attribution[] {
@@ -28,7 +28,7 @@ function audioDialect(url?: string): 'en-us' | 'en-gb' | 'unknown' {
 export class FreeDictionaryAdapter implements DictionaryAdapter {
   status(): ProviderStatus {
     return { id: 'free_dictionary', name: 'Free Dictionary API', tier: 'free', configured: true, licenseMode: 'OPEN_LICENSE', persistenceSupported: true,
-      persistFields: ['definitionEn', 'exampleEn', 'phonetic'], description: 'Không cần API key. Lưu nội dung khi kết quả có nguồn và giấy phép phù hợp.',
+      persistFields: ['definitionEn', 'exampleEn', 'phonetic', 'synonyms', 'antonyms'], description: 'Không cần API key. Lưu nội dung khi kết quả có nguồn và giấy phép phù hợp.',
       attribution: { name: 'Free Dictionary API', url: 'https://dictionaryapi.dev/' } };
   }
   request(query: DictionaryQuery) {
@@ -41,7 +41,7 @@ export class FreeDictionaryAdapter implements DictionaryAdapter {
       .filter(meaning => normalizePos(meaning.partOfSpeech) === query.partOfSpeech)
       .map((meaning, meaningIndex) => {
         const attribution = textAttribution(entry.license, entry.sourceUrls ?? []);
-        const persistFields: PersistField[] = attribution.length ? ['definitionEn', 'exampleEn', 'phonetic'] : [];
+        const persistFields: PersistField[] = attribution.length ? ['definitionEn', 'exampleEn', 'phonetic', 'synonyms', 'antonyms'] : [];
         const providerEntryRef = hash(`free:${entry.word}:${entryIndex}:${meaning.partOfSpeech}`);
         const pronunciations = (entry.phonetics ?? []).map(p => {
           const url = httpsUrl(p.audio);
@@ -51,7 +51,7 @@ export class FreeDictionaryAdapter implements DictionaryAdapter {
         pronunciations.sort((a, b) => Number(b.dialect === query.dialect) - Number(a.dialect === query.dialect));
         return { lemma: entry.word, partOfSpeech: normalizePos(meaning.partOfSpeech), providerEntryRef, senses: meaning.definitions.map((definition, index) => ({
           providerSenseRef: hash(`${providerEntryRef}:${meaningIndex}:${index}:${definition.definition}`), definition: textField(definition.definition), examples: examplesField(definition.example ? [definition.example] : []),
-          pronunciations, cefr: cefrUnknown, attribution, persistFields,
+          pronunciations, synonyms: definition.synonyms ?? [], antonyms: definition.antonyms ?? [], cefr: cefrUnknown, attribution, persistFields,
         })) };
       }));
     const warnings: string[] = [];

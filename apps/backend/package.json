@@ -15,7 +15,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "test:api": "tsx --test --test-concurrency=1 test/*.test.ts"
+    "test:api": "tsx --test --test-concurrency=1 test/*.test.ts",
+    "dictionary:import": "tsx prisma/import-dictionaries.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.922.0",

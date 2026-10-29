@@ -7,7 +7,7 @@ import { json as jsonBody } from 'express';
 import { randomUUID } from 'node:crypto';
 import { enrichOpenApi } from './common/openapi';
 import { AppModule } from './app.module';
-import { config } from './common/config';
+import { config, getAllowedOrigins } from './common/config';
 import { ErrorFilter } from './common/http';
 
 export async function createApp() {
@@ -23,7 +23,13 @@ export async function createApp() {
     res.setHeader('Cache-Control', 'no-store');
     next();
   });
-  app.enableCors({ origin: config.APP_ORIGIN, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'Idempotency-Key'], methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] });
+  const allowed = getAllowedOrigins();
+  app.enableCors({
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => callback(null, !origin || allowed.includes(origin)),
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'Idempotency-Key'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
   app.setGlobalPrefix('api/v1');
   app.useGlobalFilters(new ErrorFilter());
   app.enableShutdownHooks();

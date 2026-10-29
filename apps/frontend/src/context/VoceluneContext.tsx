@@ -4,7 +4,7 @@ import { VocabItem, Deck, Card, ReviewLog, TestAttempt, UserSettings, FSRSRating
 import { INITIAL_SETTINGS } from '@/lib/seed-data';
 import { api, post, ApiError } from '@/lib/api';
 
-type User = { id: string; email: string; displayName: string };
+type User = { id: string; email: string; displayName: string; avatarAssetId?: string | null; avatarUrl?: string | null };
 type Overview = { forecastData: { day: string; cards: number }[]; forgettingCurveData: { day: string; retrievability: number; threshold: number }[]; averageStability: number; streak: number; observedRetention: number | null; sampleSize: number; todayReviewsCount: number; activityHeatmap: DailyActivity[]; weakWords: { vocab: VocabItem; lapses: number; reps: number }[] };
 type Snapshot = { user: User; vocabItems: VocabItem[]; decks: Deck[]; cards: Card[]; dueCards: Card[]; reviewLogs: ReviewLog[]; testAttempts: TestAttempt[]; settings: UserSettings; overview: Overview };
 interface VoceluneContextType {
@@ -22,6 +22,8 @@ interface VoceluneContextType {
   revealCard: (cardId: string) => Promise<void>; gradeCard: (cardId: string, rating: FSRSRating, durationMs?: number) => Promise<void>;
   undoLastReview: () => Promise<boolean>; toggleSuspendCard: (cardId: string) => Promise<void>;
   updateSettings: (updates: Partial<UserSettings>) => Promise<void>;
+  uploadAvatar: (file: File) => Promise<void>;
+  removeAvatar: () => Promise<void>;
   dueCards: Card[]; newCards: Card[]; learningCards: Card[]; reviewCards: Card[];
   streak: number; observedRetention: number | null; retentionSampleSize: number; weakWords: { vocab: VocabItem; lapses: number; reps: number }[];
   todayReviewsCount: number; activityHeatmap: DailyActivity[];
@@ -115,12 +117,38 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
     await perform(() => api(`/cards/${cardId}`, { method: 'PATCH', body: JSON.stringify({ suspended: !card.suspended, expectedCardVersion: card.version }) }));
   }, [snapshot?.cards, perform]);
   const updateSettings = useCallback(async (updates: Partial<UserSettings>) => { await perform(() => api('/me/settings', { method: 'PATCH', body: JSON.stringify(updates) })); }, [perform]);
+  const uploadAvatar = useCallback(async (file: File) => {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      throw new Error('Chỉ hỗ trợ ảnh PNG, JPEG hoặc WebP.');
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error('Kích thước ảnh tối đa là 5MB.');
+    }
+    return perform(async () => {
+      const intent = await post<{ id: string; uploadUrl: string; headers: Record<string, string> }>('/media/upload-intents', {
+        purpose: 'avatar',
+        mime: file.type,
+        sizeBytes: file.size,
+      });
+      const uploadRes = await fetch(intent.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      if (!uploadRes.ok) throw new Error('Tải ảnh lên kho lưu trữ R2 không thành công.');
+      await post(`/media/${intent.id}/complete`);
+      await post('/me/avatar', { assetId: intent.id });
+    });
+  }, [perform]);
+  const removeAvatar = useCallback(async () => {
+    await perform(() => api('/me/avatar', { method: 'DELETE' }));
+  }, [perform]);
   const cards = snapshot?.cards ?? [];
   const computed = useMemo(() => ({ newCards: cards.filter(c => c.state === 'new'), learningCards: cards.filter(c => ['learning', 'relearning'].includes(c.state)), reviewCards: cards.filter(c => c.state === 'review') }), [cards]);
   const overview = snapshot?.overview;
   return <VoceluneContext.Provider value={{ analytics: overview ?? null, user: snapshot?.user ?? null, error, clearError: () => setError(null), refresh, login, logout,
     vocabItems: snapshot?.vocabItems ?? [], decks: snapshot?.decks ?? [], cards, reviewLogs: snapshot?.reviewLogs ?? [], testAttempts: snapshot?.testAttempts ?? [], settings: snapshot?.settings ?? INITIAL_SETTINGS, isLoaded, canUndo: !!lastReview,
-    addVocabItem, updateVocabItem, deleteVocabItem, addDeck, updateDeck, deleteDeck, renameTopicGroup, deleteTopicGroup, forkPublicDeck, revealCard, gradeCard, undoLastReview, toggleSuspendCard, updateSettings,
+    addVocabItem, updateVocabItem, deleteVocabItem, addDeck, updateDeck, deleteDeck, renameTopicGroup, deleteTopicGroup, forkPublicDeck, revealCard, gradeCard, undoLastReview, toggleSuspendCard, updateSettings, uploadAvatar, removeAvatar,
     dueCards: snapshot?.dueCards ?? [], ...computed, streak: overview?.streak ?? 0, observedRetention: overview?.observedRetention ?? null, retentionSampleSize: overview?.sampleSize ?? 0,
     weakWords: overview?.weakWords ?? [], todayReviewsCount: overview?.todayReviewsCount ?? 0, activityHeatmap: overview?.activityHeatmap.slice(-42) ?? [],
   }}>{children}</VoceluneContext.Provider>;

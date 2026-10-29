@@ -159,11 +159,26 @@ export function StudyConsole() {
     try {
       if (await undoLastReview()) {
         setSlideDirection(-1); setCurrentIndex(i => Math.max(0, i - 1));
-        setCompletedCount(c => Math.max(0, c - 1)); setIsFlipped(false); setStartTime(Date.now());
+        setCompletedCount(c => Math.max(0, c - 1)); setIsFlipped(false); setSelectedOption(null); setStartTime(Date.now());
       }
     } catch { /* The server explains expired/conflicting undo via the app banner. */ }
     finally { grading.current = false; }
   }, [canUndo, undoLastReview]);
+
+  // Handle MCQ selection: visual feedback, pronunciation, then flip
+  const handleSelectOption = useCallback(
+    (opt: string) => {
+      if (isFlipped || selectedOption !== null) return;
+      setSelectedOption(opt);
+      if (settings.autoPronounce && currentVocab) {
+        speakWord(currentVocab.word, currentVocab.dialect || settings.englishDialect);
+      }
+      setTimeout(() => {
+        setIsFlipped(true);
+      }, 400);
+    },
+    [isFlipped, selectedOption, settings.autoPronounce, currentVocab, settings.englishDialect]
+  );
 
   // Keyboard shortcut listener
   useEffect(() => {
@@ -178,8 +193,24 @@ export function StudyConsole() {
       }
 
       if (e.code === 'Space') {
+        // In mcq or typed before submit, Space shouldn't blindly flip the card
+        if (!isFlipped && (mode === 'mcq' || (mode === 'typed' && !typedSubmitted))) {
+          return;
+        }
         e.preventDefault();
         handleFlip();
+      } else if (!isFlipped && mode === 'mcq') {
+        const keyMap: Record<string, number> = {
+          '1': 0, 'a': 0, 'A': 0,
+          '2': 1, 'b': 1, 'B': 1,
+          '3': 2, 'c': 2, 'C': 2,
+          '4': 3, 'd': 3, 'D': 3,
+        };
+        const optIndex = keyMap[e.key];
+        if (optIndex !== undefined && mcqOptions[optIndex]) {
+          e.preventDefault();
+          handleSelectOption(mcqOptions[optIndex]);
+        }
       } else if (isFlipped) {
         if (e.key === '1') handleGrade(1);
         if (e.key === '2') handleGrade(2);
@@ -197,7 +228,7 @@ export function StudyConsole() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFlipped, handleFlip, handleGrade, canUndo, undoLastReview, currentIndex, mode, typedSubmitted, handleUndo]);
+  }, [isFlipped, handleFlip, handleGrade, canUndo, handleUndo, mode, typedSubmitted, mcqOptions, handleSelectOption]);
 
   // Handle Typed Submit: Validate and then flip card to reveal full details
   const handleTypedSubmit = (e: React.FormEvent) => {
@@ -339,6 +370,7 @@ export function StudyConsole() {
                   setIsFlipped(false);
                   setTypedSubmitted(false);
                   setTypedInput('');
+                  setSelectedOption(null);
                 }}
                 className={`relative px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
                   isActive ? 'text-white' : 'text-text-secondary hover:text-brand-ink'
@@ -385,10 +417,14 @@ export function StudyConsole() {
               animate={{ rotateY: isFlipped ? 180 : 0 }}
               transition={{ duration: 0.45, ease: [0.23, 1, 0.32, 1] }}
               style={{ transformStyle: 'preserve-3d' }}
-              className="relative w-full min-h-[380px] rounded-card shadow-card cursor-pointer"
+              className={`relative w-full min-h-[380px] rounded-card shadow-card ${
+                !isFlipped && (mode === 'flashcard' || mode === 'listening')
+                  ? 'cursor-pointer'
+                  : ''
+              }`}
               onClick={() => {
-                // Clicking the card flips it if not typing
-                if (mode !== 'typed' || typedSubmitted) {
+                // Clicking the card flips it only in flashcard or listening mode on the front
+                if (!isFlipped && (mode === 'flashcard' || mode === 'listening')) {
                   handleFlip();
                 }
               }}
@@ -496,26 +532,50 @@ export function StudyConsole() {
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
-                        {mcqOptions.map((opt, i) => (
-                          <motion.button
-                            key={i}
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                            onClick={() => {
-                              setSelectedOption(opt);
-                              setIsFlipped(true);
-                              if (settings.autoPronounce && currentVocab) {
-                                speakWord(currentVocab.word, currentVocab.dialect || settings.englishDialect);
-                              }
-                            }}
-                            className="p-3 text-left text-xs font-semibold rounded-control border border-slate-200 hover:border-brand-primary hover:bg-brand-primarySoft/40 transition-all shadow-xs"
-                          >
-                            <span className="font-bold text-slate-400 mr-2">
-                              {String.fromCharCode(65 + i)}.
-                            </span>
-                            {opt}
-                          </motion.button>
-                        ))}
+                        {mcqOptions.map((opt, i) => {
+                          const isSelected = selectedOption === opt;
+                          const isCorrect = opt === currentVocab.meaningVi;
+                          let btnStyle =
+                            'border-slate-200 hover:border-brand-primary hover:bg-brand-primarySoft/40 text-brand-ink';
+                          if (selectedOption !== null) {
+                            if (isCorrect) {
+                              btnStyle =
+                                'border-emerald-500 bg-emerald-50 text-emerald-800 font-bold ring-2 ring-emerald-500/20';
+                            } else if (isSelected) {
+                              btnStyle =
+                                'border-rose-500 bg-rose-50 text-rose-800 font-bold ring-2 ring-rose-500/20';
+                            } else {
+                              btnStyle = 'border-slate-200 opacity-40 text-slate-400';
+                            }
+                          }
+
+                          return (
+                            <motion.button
+                              key={i}
+                              whileHover={selectedOption === null ? { scale: 1.02 } : {}}
+                              whileTap={selectedOption === null ? { scale: 0.98 } : {}}
+                              disabled={selectedOption !== null || isFlipped}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectOption(opt);
+                              }}
+                              className={`p-3 text-left text-xs font-semibold rounded-control border transition-all shadow-xs flex items-center justify-between ${btnStyle}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-400">
+                                  {String.fromCharCode(65 + i)}.
+                                </span>
+                                <span>{opt}</span>
+                              </div>
+                              {selectedOption !== null && isCorrect && (
+                                <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
+                              )}
+                              {selectedOption !== null && isSelected && !isCorrect && (
+                                <X className="w-4 h-4 text-rose-600 stroke-[3]" />
+                              )}
+                            </motion.button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -548,22 +608,64 @@ export function StudyConsole() {
 
                 {/* Front Footer: Hint & Flip Button */}
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[11px] text-text-secondary flex items-center gap-1">
-                    <Keyboard className="w-3.5 h-3.5" />
-                    <span>Nhấn <strong>Space</strong> hoặc chạm vào thẻ để lật</span>
-                  </span>
+                  {mode === 'mcq' ? (
+                    <>
+                      <span className="text-[11px] text-text-secondary flex items-center gap-1">
+                        <Keyboard className="w-3.5 h-3.5" />
+                        <span>Chọn đáp án (Phím <strong>1-4</strong> hoặc <strong>A-D</strong>)</span>
+                      </span>
 
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleFlip();
-                    }}
-                    className="px-4 py-2 bg-brand-primary text-white text-xs font-bold rounded-control hover:bg-brand-primaryHover transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
-                  >
-                    <span>Lật xem đáp án</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFlip();
+                        }}
+                        className="px-3 py-1.5 text-xs text-text-secondary hover:text-brand-ink hover:bg-slate-100 rounded-control font-medium transition-all flex items-center gap-1.5"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Bỏ qua & Xem đáp án</span>
+                      </button>
+                    </>
+                  ) : mode === 'typed' ? (
+                    <>
+                      <span className="text-[11px] text-text-secondary flex items-center gap-1">
+                        <Keyboard className="w-3.5 h-3.5" />
+                        <span>Nhấn <strong>Enter</strong> để kiểm tra đáp án</span>
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFlip();
+                        }}
+                        className="px-3 py-1.5 text-xs text-text-secondary hover:text-brand-ink hover:bg-slate-100 rounded-control font-medium transition-all flex items-center gap-1.5"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Bỏ qua & Xem đáp án</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[11px] text-text-secondary flex items-center gap-1">
+                        <Keyboard className="w-3.5 h-3.5" />
+                        <span>Nhấn <strong>Space</strong> hoặc chạm vào thẻ để lật</span>
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFlip();
+                        }}
+                        className="px-4 py-2 bg-brand-primary text-white text-xs font-bold rounded-control hover:bg-brand-primaryHover transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                      >
+                        <span>Lật xem đáp án</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -574,6 +676,7 @@ export function StudyConsole() {
                   WebkitBackfaceVisibility: 'hidden',
                   transform: 'rotateY(180deg)',
                 }}
+                onClick={(e) => e.stopPropagation()}
                 className={`absolute inset-0 bg-surface-base border-2 border-brand-primary/40 rounded-card p-6 md:p-8 flex flex-col justify-between select-none shadow-elevated ${
                   !isFlipped ? 'pointer-events-none' : ''
                 }`}
@@ -604,6 +707,40 @@ export function StudyConsole() {
 
                 {/* Back Revealed Knowledge Body */}
                 <div className="py-4 flex-1 space-y-3.5 text-left overflow-y-auto">
+                  {/* MCQ verification banner if in MCQ mode */}
+                  {mode === 'mcq' && (
+                    <motion.div
+                      initial={{ scale: 0.95, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className={`p-3 rounded-control text-xs font-semibold flex items-center gap-2.5 ${
+                        selectedOption === currentVocab.meaningVi
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          : selectedOption
+                          ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                          : 'bg-slate-50 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      {selectedOption === currentVocab.meaningVi ? (
+                        <>
+                          <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
+                          <span>Chính xác! Bạn đã chọn đúng nghĩa: <strong>{currentVocab.meaningVi}</strong></span>
+                        </>
+                      ) : selectedOption ? (
+                        <>
+                          <X className="w-4 h-4 text-rose-600 stroke-[3]" />
+                          <span>
+                            Bạn đã chọn: <strong className="underline">&ldquo;{selectedOption}&rdquo;</strong> (Đáp án đúng: <strong>{currentVocab.meaningVi}</strong>)
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <HelpCircle className="w-4 h-4 text-slate-500" />
+                          <span>Bạn đã bỏ qua câu hỏi này (Đáp án đúng: <strong>{currentVocab.meaningVi}</strong>)</span>
+                        </>
+                      )}
+                    </motion.div>
+                  )}
+
                   {/* Typed verification banner if in typed mode */}
                   {mode === 'typed' && typedSubmitted && (
                     <motion.div

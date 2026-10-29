@@ -100,7 +100,12 @@ export function PublicDeckPreviewModal({
                 </span>
               </div>
               <div className="flex items-center gap-3 text-xs text-text-secondary mt-1">
-                <span>Bởi <strong>{data?.authorName || 'Cộng đồng'}</strong></span>
+                <span className="flex items-center gap-1.5">
+                  {data?.authorAvatarUrl ? (
+                    <img src={data.authorAvatarUrl} alt={data.authorName} className="w-4 h-4 rounded-full object-cover ring-1 ring-slate-200" />
+                  ) : null}
+                  <span>Bởi <strong>{data?.authorName || 'Cộng đồng'}</strong></span>
+                </span>
                 <span>•</span>
                 <span>{data?.itemCount || 0} từ</span>
                 <span>•</span>

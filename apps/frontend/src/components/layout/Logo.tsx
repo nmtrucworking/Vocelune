@@ -1,11 +1,14 @@
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
-interface LogoProps {
-  size?: 'sm' | 'md' | 'lg';
+export interface LogoProps {
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   showTagline?: boolean;
   className?: string;
   href?: string;
+  iconOnly?: boolean;
+  theme?: 'auto' | 'light' | 'dark';
 }
 
 export function Logo({
@@ -13,80 +16,80 @@ export function Logo({
   showTagline = false,
   className = '',
   href = '/',
+  iconOnly = false,
+  theme = 'auto',
 }: LogoProps) {
-  const iconSizes = {
-    sm: 'w-7 h-7',
-    md: 'w-9 h-9',
-    lg: 'w-11 h-11',
+  const pixelSizes = {
+    sm: 30,
+    md: 38,
+    lg: 46,
+    xl: 56,
+  };
+
+  const iconClasses = {
+    sm: 'w-7 h-7 sm:w-8 sm:h-8',
+    md: 'w-9 h-9 sm:w-10 sm:h-10',
+    lg: 'w-11 h-11 sm:w-12 sm:h-12',
+    xl: 'w-14 h-14',
   };
 
   const textSizes = {
-    sm: 'text-lg',
-    md: 'text-xl',
-    lg: 'text-2xl',
+    sm: 'text-base sm:text-lg',
+    md: 'text-lg sm:text-xl',
+    lg: 'text-xl sm:text-2xl',
+    xl: 'text-2xl sm:text-3xl',
   };
 
-  return (
-    <Link href={href} className={`flex items-center gap-2.5 group select-none ${className}`}>
-      {/* Recall Orbit SVG Icon with Floating/Pulse Animation */}
+  const isLight = theme === 'light';
+
+  const content = (
+    <div className={`flex items-center gap-2.5 sm:gap-3 group select-none ${className}`}>
+      {/* 3D Moon Flashcard Logo Icon */}
       <div
-        className={`${iconSizes[size]} relative flex items-center justify-center rounded-control bg-brand-primary text-white shadow-sm transition-all duration-300 group-hover:scale-105 group-hover:shadow-elevated animate-float-orbit`}
+        className={`${iconClasses[size]} relative flex-shrink-0 flex items-center justify-center transition-transform duration-300 group-hover:scale-105 group-hover:-translate-y-0.5 filter drop-shadow-sm`}
       >
-        <svg
-          viewBox="0 0 32 32"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          className="w-5/6 h-5/6"
-        >
-          {/* Subtle Orbit Track */}
-          <ellipse
-            cx="16"
-            cy="16"
-            rx="11"
-            ry="6"
-            transform="rotate(-25 16 16)"
-            stroke="white"
-            strokeWidth="1.5"
-            strokeDasharray="2 3"
-            strokeOpacity="0.75"
-          />
-          {/* Center Memory Card */}
-          <rect
-            x="11"
-            y="9"
-            width="10"
-            height="14"
-            rx="2.5"
-            fill="white"
-            fillOpacity="0.95"
-            className="transition-transform duration-200 group-hover:scale-105"
-          />
-          {/* Subtle V negative cut */}
-          <path
-            d="M13 12L16 17L19 12"
-            stroke="#5949E8"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {/* Memory nodes on orbit with subtle glowing pulse */}
-          <circle cx="6.5" cy="11.5" r="1.6" fill="#D8F7F1" className="animate-pulse" />
-          <circle cx="25.5" cy="20.5" r="1.6" fill="#D8F7F1" className="animate-pulse" />
-        </svg>
+        <Image
+          src="/brand/logo-icon.svg"
+          alt="Vocelune Moon Flashcard"
+          width={pixelSizes[size]}
+          height={pixelSizes[size]}
+          className="w-full h-full object-contain"
+          priority
+          unoptimized
+        />
       </div>
 
-      <div className="flex flex-col">
-        <span
-          className={`font-extrabold tracking-tight text-brand-ink leading-none ${textSizes[size]}`}
-        >
-          Vocelune
-        </span>
-        {showTagline && (
-          <span className="text-[11px] text-text-secondary mt-0.5 font-normal tracking-wide">
-            Mỗi từ, một nhịp nhớ.
+      {/* Brand Name & Tagline */}
+      {!iconOnly && (
+        <div className="flex flex-col">
+          <span
+            className={`font-extrabold tracking-tight leading-none transition-colors ${
+              isLight ? 'text-white' : 'text-brand-ink group-hover:text-brand-primary'
+            } ${textSizes[size]}`}
+          >
+            Vocelune
           </span>
-        )}
-      </div>
-    </Link>
+          {showTagline && (
+            <span
+              className={`text-[11px] mt-0.5 font-normal tracking-wide transition-colors ${
+                isLight ? 'text-slate-300' : 'text-text-secondary'
+              }`}
+            >
+              Mỗi từ, một nhịp nhớ.
+            </span>
+          )}
+        </div>
+      )}
+    </div>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="inline-flex items-center">
+        {content}
+      </Link>
+    );
+  }
+
+  return content;
 }

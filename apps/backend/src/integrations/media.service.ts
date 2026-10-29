@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Response } from 'express';
 import { z } from 'zod';
 import { Database } from '../common/db';
 import { config } from '../common/config';
@@ -52,6 +53,49 @@ export class MediaService {
     const asset = await this.db.mediaAsset.findFirst({ where: { id: assetId, userId, status: 'ready', deletedAt: null } });
     if (!asset) fail(404, 'NOT_FOUND', 'Không tìm thấy ảnh.');
     return { url: await getSignedUrl(client, new GetObjectCommand({ Bucket: config.R2_BUCKET, Key: asset.objectKey, ResponseContentDisposition: 'inline', ResponseContentType: asset.mime }), { expiresIn: 120 }), expiresIn: 120 };
+  }
+  async stream(asset: { id: string; objectKey: string; mime: string; sizeBytes: number }, res: Response, ifNoneMatch?: string) {
+    const client = this.storage();
+    let head;
+    try {
+      head = await client.send(new HeadObjectCommand({ Bucket: config.R2_BUCKET, Key: asset.objectKey }));
+    } catch {
+      fail(404, 'NOT_FOUND', 'Không tìm thấy tệp ảnh trong kho lưu trữ.');
+    }
+    const etag = head.ETag ?? `"${asset.id}"`;
+    if (ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch === asset.id || ifNoneMatch === `"${asset.id}"`)) {
+      res.status(304).end();
+      return;
+    }
+    const object = await client.send(new GetObjectCommand({ Bucket: config.R2_BUCKET, Key: asset.objectKey }));
+    res.setHeader('Content-Type', asset.mime);
+    if (head.ContentLength) res.setHeader('Content-Length', head.ContentLength);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    const body = object.Body;
+    if (body && typeof (body as any).pipe === 'function') {
+      (body as any).pipe(res);
+    } else if (body && typeof (body as any).transformToByteArray === 'function') {
+      const bytes = await (body as any).transformToByteArray();
+      res.end(Buffer.from(bytes));
+    } else {
+      res.status(404).end();
+    }
+  }
+  async streamAvatar(userId: string, res: Response, ifNoneMatch?: string) {
+    const user = await this.db.user.findUnique({
+      where: { id: userId },
+      include: { avatarAsset: true },
+    });
+    if (!user || !user.avatarAsset || user.avatarAsset.status !== 'ready' || user.avatarAsset.deletedAt) {
+      fail(404, 'NOT_FOUND', 'Người dùng chưa có ảnh đại diện.');
+    }
+    return this.stream(user.avatarAsset, res, ifNoneMatch);
+  }
+  async streamAsset(userId: string, assetId: string, res: Response, ifNoneMatch?: string) {
+    const asset = await this.db.mediaAsset.findFirst({ where: { id: assetId, userId, status: 'ready', deletedAt: null } });
+    if (!asset) fail(404, 'NOT_FOUND', 'Không tìm thấy ảnh.');
+    return this.stream(asset, res, ifNoneMatch);
   }
   async attach(userId: string, assetId: string, body: unknown) {
     const { vocabId } = z.object({ vocabId: uuid }).strict().parse(body);

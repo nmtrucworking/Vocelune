@@ -1,7 +1,25 @@
 'use client';
 
-import React from 'react';
-import { Menu, Plus, Volume2, Search, Bell } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Menu,
+  Plus,
+  Volume2,
+  Settings,
+  LogOut,
+  ChevronDown,
+  Flame,
+  BookOpen,
+  TrendingUp,
+  Sparkles,
+  User,
+  ShieldCheck,
+  BarChart3,
+  FileSpreadsheet,
+} from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { speakWord } from '@/lib/speech';
 
@@ -12,14 +30,49 @@ interface NavbarProps {
 }
 
 export function Navbar({ onOpenMobileSidebar, onOpenQuickAdd, pageTitle }: NavbarProps) {
-  const { settings } = useVocelune();
+  const router = useRouter();
+  const { user, settings, streak, vocabItems, observedRetention, logout } = useVocelune();
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   const handleTestAudio = () => {
     speakWord('Vocelune, a rhythm for every word.', settings.englishDialect);
   };
 
+  // Close popover when clicking outside or pressing Escape
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setPopoverOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setPopoverOpen(false);
+      }
+    }
+
+    if (popoverOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [popoverOpen]);
+
+  const handleLogout = async () => {
+    setPopoverOpen(false);
+    await logout();
+    router.push('/login');
+  };
+
+  const initialLetter = (settings.displayName || user?.displayName || 'U').charAt(0).toUpperCase();
+
   return (
-    <header className="h-16 bg-surface-base border-b border-slate-200/80 px-4 md:px-8 flex items-center justify-between sticky top-0 z-20">
+    <header className="h-16 bg-surface-base border-b border-slate-200/80 px-4 md:px-8 flex items-center justify-between sticky top-0 z-30">
       <div className="flex items-center gap-3">
         {/* Mobile menu button */}
         <button
@@ -57,14 +110,172 @@ export function Navbar({ onOpenMobileSidebar, onOpenQuickAdd, pageTitle }: Navba
           <span>Thêm từ</span>
         </button>
 
-        {/* Profile Pill */}
-        <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-          <div className="w-8 h-8 rounded-full bg-brand-primarySoft text-brand-primary flex items-center justify-center font-bold text-xs border border-brand-primary/20">
-            {settings.displayName.charAt(0)}
-          </div>
-          <span className="text-xs font-medium text-brand-ink hidden lg:inline">
-            {settings.displayName}
-          </span>
+        {/* Profile Avatar & Interactive Popover */}
+        <div className="relative pl-2 border-l border-slate-200" ref={popoverRef}>
+          <button
+            onClick={() => setPopoverOpen(!popoverOpen)}
+            className="flex items-center gap-2 p-1 rounded-full hover:bg-slate-100/80 transition-colors focus:outline-none group"
+            aria-label="Menu tài khoản cá nhân"
+            aria-expanded={popoverOpen}
+          >
+            {/* Avatar with gradient and online status indicator */}
+            <div className="relative">
+              {user?.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={settings.displayName}
+                  className="w-8 h-8 rounded-full object-cover ring-2 ring-brand-primary/20 group-hover:ring-brand-primary/40 transition-all"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand-primary to-indigo-500 text-white flex items-center justify-center font-bold text-xs shadow-xs ring-2 ring-brand-primary/20 group-hover:ring-brand-primary/40 transition-all">
+                  {initialLetter}
+                </div>
+              )}
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />
+            </div>
+
+            <div className="hidden lg:flex items-center gap-1.5 text-left">
+              <span className="text-xs font-semibold text-brand-ink max-w-[120px] truncate">
+                {settings.displayName}
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${
+                  popoverOpen ? 'rotate-180 text-brand-primary' : ''
+                }`}
+              />
+            </div>
+          </button>
+
+          {/* Animated Popover Menu */}
+          <AnimatePresence>
+            {popoverOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                transition={{ duration: 0.15, ease: 'easeOut' }}
+                className="absolute right-0 mt-2 w-72 bg-surface-base rounded-2xl shadow-elevated border border-slate-200/90 overflow-hidden z-50 divide-y divide-slate-100"
+              >
+                {/* User Header Summary */}
+                <div className="p-4 bg-gradient-to-br from-brand-canvas/60 via-white to-white space-y-3">
+                  <div className="flex items-center gap-3">
+                    {user?.avatarUrl ? (
+                      <img
+                        src={user.avatarUrl}
+                        alt={settings.displayName}
+                        className="w-11 h-11 rounded-full object-cover shadow-md ring-2 ring-brand-primary/20"
+                      />
+                    ) : (
+                      <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-brand-primary to-indigo-600 text-white flex items-center justify-center font-extrabold text-sm shadow-md ring-2 ring-brand-primary/20">
+                        {initialLetter}
+                      </div>
+                    )}
+                    <div className="space-y-0.5 overflow-hidden">
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="font-bold text-sm text-brand-ink truncate">
+                          {settings.displayName}
+                        </h4>
+                        <ShieldCheck className="w-3.5 h-3.5 text-brand-primary shrink-0" />
+                      </div>
+                      <p className="text-[11px] text-text-secondary truncate">
+                        {user?.email || 'learner@vocelune.com'}
+                      </p>
+                      <div className="pt-0.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-primarySoft text-brand-primary">
+                          <Sparkles className="w-2.5 h-2.5" />
+                          <span>Học viên FSRS</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Micro Stats Strip */}
+                  <div className="grid grid-cols-3 gap-1 bg-surface-subtle p-2 rounded-xl border border-slate-200/60 text-center">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-text-secondary flex items-center justify-center gap-0.5">
+                        <Flame className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
+                        <span>Chuỗi</span>
+                      </span>
+                      <span className="text-xs font-extrabold text-brand-ink">
+                        {streak}d
+                      </span>
+                    </div>
+
+                    <div className="space-y-0.5 border-x border-slate-200/60">
+                      <span className="text-[10px] text-text-secondary flex items-center justify-center gap-0.5">
+                        <BookOpen className="w-2.5 h-2.5 text-brand-primary" />
+                        <span>Kho từ</span>
+                      </span>
+                      <span className="text-xs font-extrabold text-brand-ink">
+                        {vocabItems.length}
+                      </span>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-text-secondary flex items-center justify-center gap-0.5">
+                        <TrendingUp className="w-2.5 h-2.5 text-emerald-600" />
+                        <span>Tỷ lệ nhớ</span>
+                      </span>
+                      <span className="text-xs font-extrabold text-emerald-600">
+                        {observedRetention !== null ? `${observedRetention}%` : 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Navigation Links */}
+                <div className="p-1.5 space-y-0.5 text-xs">
+                  <Link
+                    href="/profile"
+                    onClick={() => setPopoverOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
+                  >
+                    <Settings className="w-4 h-4 text-slate-400" />
+                    <span>Hồ sơ & Cài đặt hệ thống</span>
+                  </Link>
+
+                  <Link
+                    href="/library"
+                    onClick={() => setPopoverOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
+                  >
+                    <BookOpen className="w-4 h-4 text-slate-400" />
+                    <span>Thư viện từ vựng & Chủ đề</span>
+                  </Link>
+
+                  <Link
+                    href="/analytics"
+                    onClick={() => setPopoverOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
+                  >
+                    <BarChart3 className="w-4 h-4 text-slate-400" />
+                    <span>Phân tích & Tiến độ FSRS</span>
+                  </Link>
+
+                  <Link
+                    href="/import"
+                    onClick={() => setPopoverOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-slate-400" />
+                    <span>Nhập / Xuất dữ liệu</span>
+                  </Link>
+                </div>
+
+                {/* Footer Action: Logout */}
+                <div className="p-1.5">
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 font-semibold text-xs transition-colors"
+                  >
+                    <LogOut className="w-4 h-4 text-rose-500" />
+                    <span>Đăng xuất tài khoản</span>
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </header>

@@ -7,11 +7,12 @@ export function deckDto(d: Deck & { _count?: { items: number } }) {
   const { userId, normalizedName, deletedAt, _count, ...fields } = d;
   return { ...fields, ...(typeof _count?.items === 'number' ? { itemCount: _count.items } : {}) };
 }
-export function publicDeckDto(d: Deck & { user?: { displayName: string }; _count?: { items: number } }) {
+export function publicDeckDto(d: Deck & { user?: { id?: string; displayName: string; avatarAssetId?: string | null }; _count?: { items: number } }) {
   const { userId, normalizedName, deletedAt, _count, user, ...fields } = d;
   return {
     ...fields,
     authorName: user?.displayName || 'Cộng đồng',
+    authorAvatarUrl: user?.avatarAssetId && user?.id ? `/api/v1/users/${user.id}/avatar?v=${user.avatarAssetId}` : null,
     itemCount: _count?.items ?? 0,
   };
 }

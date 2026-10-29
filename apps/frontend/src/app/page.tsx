@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Brain,
   Sparkles,
@@ -30,86 +31,20 @@ import { speakWord } from '@/lib/speech';
 import { AudioButton } from '@/components/common/AudioButton';
 import { PublicNavbar } from '@/components/public/PublicNavbar';
 import { PublicFooter } from '@/components/public/PublicFooter';
-
-interface DemoWord {
-  id: string;
-  word: string;
-  phonetic: string;
-  partOfSpeech: string;
-  cefr: string;
-  meaningVi: string;
-  definitionEn: string;
-  exampleEn: string;
-  exampleVi: string;
-}
-
-const DEMO_WORDS: DemoWord[] = [
-  {
-    id: 'resilient',
-    word: 'resilient',
-    phonetic: '/rɪˈzɪl.jənt/',
-    partOfSpeech: 'adjective',
-    cefr: 'C1',
-    meaningVi: 'Kiên cường, có khả năng phục hồi nhanh sau khó khăn',
-    definitionEn: 'Able to be happy, successful, etc. again after something difficult happens.',
-    exampleEn: 'Local businesses have proven remarkably resilient in the face of economic hardship.',
-    exampleVi: 'Các doanh nghiệp địa phương đã chứng minh sự kiên cường đáng nể khi đối mặt với khủng hoảng.',
-  },
-  {
-    id: 'ephemeral',
-    word: 'ephemeral',
-    phonetic: '/ɪˈfem.ər.əl/',
-    partOfSpeech: 'adjective',
-    cefr: 'C2',
-    meaningVi: 'Phù du, chóng tàn, chỉ tồn tại trong thời gian ngắn',
-    definitionEn: 'Lasting for only a short time; transitory.',
-    exampleEn: 'Fame in the digital era can be strikingly ephemeral.',
-    exampleVi: 'Sự nổi tiếng trong kỷ nguyên số có thể chóng tàn một cách đáng kinh ngạc.',
-  },
-  {
-    id: 'pragmatic',
-    word: 'pragmatic',
-    phonetic: '/præɡˈmæt.ɪk/',
-    partOfSpeech: 'adjective',
-    cefr: 'C1',
-    meaningVi: 'Thực tế, thực dụng, giải quyết vấn đề dựa trên điều kiện thực tế',
-    definitionEn: 'Solving problems in a sensible way that suits the conditions that really exist.',
-    exampleEn: 'We need a pragmatic approach rather than endless ideological debates.',
-    exampleVi: 'Chúng ta cần một hướng tiếp cận thực tế hơn là những cuộc tranh luận lý thuyết vô tận.',
-  },
-  {
-    id: 'meticulous',
-    word: 'meticulous',
-    phonetic: '/məˈtɪk.jə.ləs/',
-    partOfSpeech: 'adjective',
-    cefr: 'C1',
-    meaningVi: 'Tỉ mỉ, cẩn trọng, chú ý đến từng chi tiết nhỏ nhất',
-    definitionEn: 'Very careful and with great attention to every detail.',
-    exampleEn: 'The scientist kept meticulous notes throughout the clinical trials.',
-    exampleVi: 'Nhà khoa học đã ghi chép cực kỳ tỉ mỉ trong suốt quá trình thử nghiệm lâm sàng.',
-  },
-];
+import { isWorkspaceHost, getWorkspaceUrl } from '@/lib/urls';
+import { HeroFlashcards } from '@/components/public/HeroFlashcards';
+import { FeaturedPublicDecks } from '@/components/public/FeaturedPublicDecks';
+import { MathFormula } from '@/components/common/MathFormula';
 
 export default function LandingPage() {
-  const [selectedWordIndex, setSelectedWordIndex] = useState(0);
-  const [demoRevealed, setDemoRevealed] = useState(false);
-  const [fsrsFeedback, setFsrsFeedback] = useState<string | null>(null);
+  const router = useRouter();
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
 
-  const currentWord = DEMO_WORDS[selectedWordIndex];
-
-  const handleGradeChoice = (ratingLabel: string, nextInterval: string, deltaStability: string) => {
-    setFsrsFeedback(
-      `Đã ghi nhận [${ratingLabel}]: Thuật toán FSRS-6 lên lịch ôn tiếp theo sau ${nextInterval}. Độ ổn định S tăng +${deltaStability}.`
-    );
-
-    setTimeout(() => {
-      // Advance to next word
-      setFsrsFeedback(null);
-      setDemoRevealed(false);
-      setSelectedWordIndex((prev) => (prev + 1) % DEMO_WORDS.length);
-    }, 1800);
-  };
+  useEffect(() => {
+    if (typeof window !== 'undefined' && isWorkspaceHost(window.location.hostname)) {
+      router.replace('/dashboard');
+    }
+  }, [router]);
 
   const faqItems = [
     {
@@ -144,30 +79,33 @@ export default function LandingPage() {
       <PublicNavbar />
 
       {/* Hero Section */}
-      <section className="relative px-4 sm:px-6 lg:px-8 pt-12 pb-16 md:pt-20 md:pb-24 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-        {/* Left Hero Content (7 cols) */}
-        <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
+      <section className="relative px-4 sm:px-6 lg:px-8 pt-10 pb-16 md:pt-16 md:pb-20 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+        {/* Left Hero Content (6 cols) */}
+        <div className="lg:col-span-6 space-y-6 text-center lg:text-left">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-brand-primarySoft text-brand-primary text-xs font-semibold border border-brand-primary/10">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Mỗi từ, một nhịp nhớ • Chuẩn thuật toán FSRS-6</span>
+            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+            <span className="break-words">Mỗi từ, một nhịp nhớ • Chuẩn thuật toán FSRS-6</span>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-brand-ink leading-[1.12]">
+          <h1 className="text-4xl sm:text-5xl lg:text-5xl xl:text-6xl font-extrabold tracking-tight text-brand-ink leading-[1.14]">
             Học từ mới.{' '}
-            <span className="text-brand-primary underline decoration-brand-mint decoration-4 underline-offset-6">
+            <span className="text-brand-primary underline decoration-brand-mint decoration-4 underline-offset-6 inline-block">
               Ôn đúng lúc.
             </span>
             <br />
             Ghi nhớ bằng dữ liệu.
           </h1>
 
-          <p className="text-base sm:text-lg text-text-secondary max-w-2xl mx-auto lg:mx-0 leading-relaxed">
-            Thêm từ vựng, luyện truy hồi chủ động (Active Recall), để lịch ôn thích ứng FSRS giúp bạn theo dõi hành trình ghi nhớ bằng dữ liệu thực nghiệm thay vì học vẹt thụ động.
+          <p className="text-base sm:text-lg text-text-secondary max-w-2xl mx-auto lg:mx-0 leading-relaxed font-normal">
+            Không cày cuốc ngẫu nhiên. Vocelune kết hợp{' '}
+            <strong className="text-brand-ink font-semibold">Cổng Active Recall</strong> và{' '}
+            <strong className="text-brand-ink font-semibold">thuật toán FSRS-6</strong> để dự
+            đoán chính xác thời điểm bạn chuẩn bị quên, đưa từ vựng trở lại đúng nhịp nhớ.
           </p>
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3.5">
             <Link
-              href="/register"
+              href={getWorkspaceUrl('/register')}
               className="w-full sm:w-auto px-7 py-3.5 bg-brand-primary hover:bg-brand-primaryHover text-white font-bold text-sm rounded-control shadow-elevated transition-all flex items-center justify-center gap-2 group active:scale-95"
             >
               <span>Bắt đầu học miễn phí</span>
@@ -178,183 +116,31 @@ export default function LandingPage() {
               href="/explore"
               className="w-full sm:w-auto px-6 py-3.5 bg-surface-base hover:bg-slate-50 text-brand-ink font-semibold text-sm rounded-control border border-slate-200 transition-colors flex items-center justify-center gap-2 shadow-xs"
             >
-              <BookOpen className="w-4 h-4 text-brand-primary" />
-              <span>Khám phá kho từ vựng mẫu</span>
+              <BookOpen className="w-4 h-4 text-brand-primary shrink-0" />
+              <span>Khám phá kho từ vựng</span>
             </Link>
           </div>
 
           {/* Trust badges */}
-          <div className="pt-4 flex flex-wrap items-center justify-center lg:justify-start gap-y-2 gap-x-6 text-xs text-text-secondary">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <div className="pt-4 flex flex-wrap items-center justify-center lg:justify-start gap-y-2.5 gap-x-6 text-xs text-text-secondary">
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>Cổng Active Recall chống học vẹt</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>Mục tiêu lưu giữ 90% vốn từ</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>Tự do xuất nhập CSV/Anki</span>
             </div>
           </div>
         </div>
 
-        {/* Right Hero Demo Card (5 cols) */}
-        <div className="lg:col-span-5 flex justify-center">
-          <div className="w-full max-w-md bg-surface-base border border-slate-200/90 rounded-card shadow-elevated p-6 sm:p-7 space-y-5 relative overflow-hidden">
-            {/* Header pill switcher */}
-            <div className="space-y-2 pb-3 border-b border-slate-100">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">
-                  Thử tương tác thẻ mẫu
-                </span>
-                <span className="text-[10px] text-brand-primary font-semibold">
-                  Thẻ {selectedWordIndex + 1}/{DEMO_WORDS.length}
-                </span>
-              </div>
-
-              {/* Sample word selector tabs */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-                {DEMO_WORDS.map((w, idx) => (
-                  <button
-                    key={w.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedWordIndex(idx);
-                      setDemoRevealed(false);
-                      setFsrsFeedback(null);
-                    }}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-all shrink-0 ${
-                      selectedWordIndex === idx
-                        ? 'bg-brand-primary text-white font-bold shadow-xs'
-                        : 'bg-slate-100 text-text-secondary hover:text-brand-ink'
-                    }`}
-                  >
-                    {w.word}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Card Metadata Top */}
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded bg-brand-primarySoft text-brand-primary font-bold text-[10px]">
-                  CEFR {currentWord.cefr}
-                </span>
-                <span className="text-text-secondary italic text-[11px]">
-                  ({currentWord.partOfSpeech})
-                </span>
-              </div>
-
-              <AudioButton
-                text={currentWord.word}
-                dialect="en-us"
-                size="sm"
-                showLabel
-              />
-            </div>
-
-            {/* Word Display */}
-            <div className="py-2 text-center space-y-1">
-              <h3 className="text-3xl font-extrabold text-brand-ink font-mono tracking-tight">
-                {currentWord.word}
-              </h3>
-              <p className="text-xs font-mono text-slate-400">{currentWord.phonetic}</p>
-            </div>
-
-            {/* Active Recall Gate / Answer Reveal */}
-            {demoRevealed ? (
-              <div className="space-y-4 pt-2 border-t border-slate-100 text-left animate-in fade-in duration-200">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-brand-primary">
-                    Nghĩa tiếng Việt
-                  </span>
-                  <p className="text-base font-bold text-brand-ink">
-                    {currentWord.meaningVi}
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-control bg-slate-50 border border-slate-100 text-xs space-y-1">
-                  <p className="italic text-brand-ink">
-                    &ldquo;{currentWord.exampleEn}&rdquo;
-                  </p>
-                  <p className="text-text-secondary text-[11px]">
-                    {currentWord.exampleVi}
-                  </p>
-                </div>
-
-                {/* 4 FSRS choices */}
-                <div>
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5 flex items-center justify-between">
-                    <span>Đánh giá độ nhớ (FSRS-6):</span>
-                    <span className="text-[9px] font-normal normal-case">Dự đoán khoảng cách ôn</span>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleGradeChoice('Again', '1 phút', '0.1')}
-                      className="p-2 rounded-control bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-center transition-colors"
-                    >
-                      <div className="text-[10px] font-bold">Again</div>
-                      <div className="text-[9px] text-rose-500">1 phút</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleGradeChoice('Hard', '12 giờ', '0.8')}
-                      className="p-2 rounded-control bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 text-center transition-colors"
-                    >
-                      <div className="text-[10px] font-bold">Hard</div>
-                      <div className="text-[9px] text-amber-500">12 giờ</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleGradeChoice('Good', '2 ngày', '1.8')}
-                      className="p-2 rounded-control bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-center transition-colors"
-                    >
-                      <div className="text-[10px] font-bold">Good</div>
-                      <div className="text-[9px] text-blue-500">2 ngày</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleGradeChoice('Easy', '5 ngày', '3.5')}
-                      className="p-2 rounded-control bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-center transition-colors"
-                    >
-                      <div className="text-[10px] font-bold">Easy</div>
-                      <div className="text-[9px] text-emerald-500">5 ngày</div>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Live simulation feedback banner */}
-                {fsrsFeedback && (
-                  <div className="p-2.5 rounded-control bg-brand-primarySoft border border-brand-primary/20 text-brand-primary text-[11px] font-medium animate-in fade-in duration-150">
-                    {fsrsFeedback}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setDemoRevealed(true)}
-                  className="w-full py-3.5 bg-brand-primary text-white font-bold text-xs rounded-control hover:bg-brand-primaryHover shadow-sm transition-all duration-150 active:scale-[0.99] flex items-center justify-center gap-2"
-                >
-                  <Brain className="w-4 h-4" />
-                  <span>Nhấn để lật thẻ (Active Recall Gate)</span>
-                </button>
-
-                <p className="text-[11px] text-center text-text-secondary italic">
-                  * Tự kiểm tra xem bạn có nhớ nghĩa trước khi nhấn mở đáp án
-                </p>
-              </div>
-            )}
-          </div>
+        {/* Right Hero Demo Cards: 4 Interactive 3D Flip Flashcards (6 cols) */}
+        <div className="lg:col-span-6 flex justify-center w-full">
+          <HeroFlashcards />
         </div>
       </section>
 
@@ -429,21 +215,66 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* FSRS Scientific Formula Box */}
-          <div className="p-6 sm:p-8 rounded-card bg-brand-ink text-white space-y-4">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          {/* FSRS Scientific Formula Box with KaTeX rendering */}
+          <div className="p-6 sm:p-8 rounded-card bg-brand-ink text-white space-y-6 shadow-elevated border border-slate-800">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
               <div>
-                <span className="text-xs font-mono uppercase tracking-wider text-brand-mint">
-                  Mô hình toán học FSRS-6
-                </span>
-                <h4 className="text-xl font-bold text-white mt-1">
-                  Xác suất gợi nhớ Retrievability: R(t, S) = (1 + Factor × t / S)⁻⁰·⁵
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-brand-mint/10 text-brand-mint text-[11px] font-mono uppercase tracking-wider font-bold">
+                  <Brain className="w-3.5 h-3.5" />
+                  <span>Mô hình khoa học FSRS-6</span>
+                </div>
+                <h4 className="text-xl sm:text-2xl font-bold text-white mt-1.5">
+                  Đo lường trí nhớ bằng toán học thực nghiệm
                 </h4>
               </div>
 
-              <div className="text-xs text-slate-300 max-w-sm">
-                Khi xác suất ghi nhớ giảm xuống ngưỡng mục tiêu (mặc định 90%), hệ thống sẽ tự động đưa từ đó vào danh sách cần ôn của ngày hôm đó.
+              <div className="text-xs text-slate-300 max-w-md leading-relaxed">
+                Khác với các hệ số nhân tùy tiện của SM-2, FSRS-6 liên tục giải phương trình vi phân mô phỏng sự suy giảm trí nhớ để tìm ra <strong className="text-brand-mint">thời điểm vàng</strong> cần ôn tập.
               </div>
+            </div>
+
+            {/* LaTeX Formulas Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Formula 1: Retrievability */}
+              <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold block">
+                  1. Xác suất gợi nhớ (Retrievability)
+                </span>
+                <div className="py-2 text-center text-brand-mint overflow-x-auto">
+                  <MathFormula math="R(t, S) = \left(1 + F \cdot \frac{t}{S}\right)^{-w}" displayMode={true} />
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Xác suất nhớ lại một từ sau <span className="text-slate-200 font-mono">t</span> ngày, dựa trên độ bền vững của ký ức <span className="text-slate-200 font-mono">S</span>. Khi <span className="text-slate-200 font-mono">R</span> chạm ngưỡng mục tiêu (mặc định 90%), hệ thống tự động báo ôn.
+                </p>
+              </div>
+
+              {/* Formula 2: Stability Updating */}
+              <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold block">
+                  2. Cập nhật độ ổn định (Memory Stability)
+                </span>
+                <div className="py-2 text-center text-brand-mint overflow-x-auto">
+                  <MathFormula math="S'_{r}(D, S, R) = S \cdot \left(e^{w_8} \cdot (11 - D) \cdot S^{-w_9} \cdot (e^{w_{10}(1-R)} - 1) + 1\right)" displayMode={true} />
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Độ bền trí nhớ <span className="text-slate-200 font-mono">S</span> tăng trưởng theo hàm phi tuyến tính sau mỗi lần kích hoạt Active Recall thành công ở mức khó <span className="text-slate-200 font-mono">D</span>.
+                </p>
+              </div>
+            </div>
+
+            {/* Optimal Review Interval formula banner */}
+            <div className="p-4 rounded-xl bg-brand-primary/10 border border-brand-primary/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-brand-primary font-bold">
+                  Khoảng cách ngày ôn tối ưu (Optimal Interval)
+                </span>
+                <div className="text-white font-mono text-sm">
+                  <MathFormula math="I(r, S) = \frac{S}{F} \cdot \left(r^{-1/w} - 1\right)" />
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-300 sm:max-w-xs leading-relaxed">
+                Đảm bảo chính xác <strong>90% số từ đã học</strong> luôn sẵn sàng trong trí nhớ dài hạn mà không lãng phí lượt ôn tập dư thừa.
+              </p>
             </div>
           </div>
         </div>
@@ -682,6 +513,9 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Featured Public Decks (Rendered from Backend) */}
+      <FeaturedPublicDecks />
+
       {/* Comparison Table Section (#comparison) */}
       <section id="comparison" className="px-4 sm:px-6 lg:px-8 py-20 bg-surface-base border-y border-slate-200/80 scroll-mt-20">
         <div className="max-w-6xl mx-auto space-y-12">
@@ -884,7 +718,7 @@ export default function LandingPage() {
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
-              href="/register"
+              href={getWorkspaceUrl('/register')}
               className="w-full sm:w-auto px-8 py-3.5 bg-white hover:bg-slate-100 text-brand-primary font-bold text-sm rounded-control shadow-elevated transition-all flex items-center justify-center gap-2 active:scale-95"
             >
               <span>Tạo tài khoản học ngay</span>

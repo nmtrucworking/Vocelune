@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
   Filter,
@@ -15,6 +16,12 @@ import {
   Edit2,
   Clock,
   ExternalLink,
+  Eye,
+  Flame,
+  Folder,
+  X,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, PartOfSpeech, CEFRLevel } from '@/types';
@@ -31,10 +38,16 @@ interface LibraryViewProps {
 }
 
 export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
-  const { vocabItems, decks, cards, deleteVocabItem, settings } = useVocelune();
+  const { vocabItems, decks, cards, deleteVocabItem, updateVocabItem, settings } = useVocelune();
 
   // Tab switch: 'my-vocab' | 'manage-topics' | 'community-topics'
   const [activeTab, setActiveTab] = useState<'my-vocab' | 'manage-topics' | 'community-topics'>('my-vocab');
+
+  // Multi-selection state for batch processing
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchMoveModalOpen, setBatchMoveModalOpen] = useState(false);
+  const [batchTargetDeckId, setBatchTargetDeckId] = useState('');
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -125,6 +138,66 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
     const start = (vocabPage - 1) * vocabPageSize;
     return filteredVocab.slice(start, start + vocabPageSize);
   }, [filteredVocab, vocabPage, vocabPageSize]);
+
+  // Batch selection handlers
+  const isAllPageSelected =
+    paginatedVocab.length > 0 && paginatedVocab.every((item) => selectedIds.has(item.id));
+  const isSomePageSelected =
+    paginatedVocab.some((item) => selectedIds.has(item.id)) && !isAllPageSelected;
+
+  const handleToggleSelectAllPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (isAllPageSelected) {
+        paginatedVocab.forEach((item) => next.delete(item.id));
+      } else {
+        paginatedVocab.forEach((item) => next.add(item.id));
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectWord = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Bạn có chắc muốn xóa ${selectedIds.size} từ vựng đã chọn khỏi thư viện?`)) return;
+    setIsBatchProcessing(true);
+    try {
+      for (const id of Array.from(selectedIds)) {
+        await deleteVocabItem(id);
+      }
+      setSelectedIds(new Set());
+    } catch {
+      // Handled by context
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  };
+
+  const handleBatchMove = async () => {
+    const target = batchTargetDeckId || decks[0]?.id;
+    if (selectedIds.size === 0 || !target) return;
+    setIsBatchProcessing(true);
+    try {
+      for (const id of Array.from(selectedIds)) {
+        await updateVocabItem(id, { deckId: target });
+      }
+      setSelectedIds(new Set());
+      setBatchMoveModalOpen(false);
+    } catch {
+      // Handled by context
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -353,13 +426,25 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 text-text-secondary font-medium border-b border-slate-200/80">
                     <tr>
+                      <th className="py-3 px-3 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isAllPageSelected}
+                          ref={(input) => {
+                            if (input) input.indeterminate = isSomePageSelected;
+                          }}
+                          onChange={handleToggleSelectAllPage}
+                          className="rounded text-brand-primary focus:ring-brand-primary cursor-pointer w-3.5 h-3.5"
+                          title="Chọn tất cả từ trên trang này"
+                        />
+                      </th>
                       <th className="py-3 px-4">Từ vựng & Phiên âm</th>
                       <th className="py-3 px-4">Từ loại</th>
                       <th className="py-3 px-4">Nghĩa tiếng Việt</th>
                       <th className="py-3 px-4">Chủ đề & Bộ từ</th>
                       <th className="py-3 px-4">Cấp độ</th>
                       <th className="py-3 px-4">Trạng thái FSRS</th>
-                      <th className="py-3 px-4">Hạn ôn</th>
+                      <th className="py-3 px-4 text-center">Hạn ôn</th>
                       <th className="py-3 px-4 text-right">Thao tác</th>
                     </tr>
                   </thead>
@@ -368,6 +453,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                       const card = cardMap.get(item.id);
                       const isDue = card && new Date(card.dueAt).getTime() <= Date.now();
                       const itemDeck = deckMap.get(item.deckId);
+                      const isSelected = selectedIds.has(item.id);
 
                       return (
                         <tr
@@ -376,8 +462,23 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                             setSelectedWord(item);
                             setDetailModalOpen(true);
                           }}
-                          className="hover:bg-brand-canvas/70 transition-colors cursor-pointer group"
+                          className={`hover:bg-brand-canvas/70 transition-colors cursor-pointer group ${
+                            isSelected ? 'bg-indigo-50/50' : ''
+                          }`}
                         >
+                          {/* Selection Checkbox */}
+                          <td
+                            className="py-3 px-3 text-center"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectWord(item.id)}
+                              className="rounded text-brand-primary focus:ring-brand-primary cursor-pointer w-3.5 h-3.5"
+                            />
+                          </td>
+
                           {/* Word & Audio */}
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2.5">
@@ -450,24 +551,31 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                             )}
                           </td>
 
-                          {/* Due Time */}
-                          <td className="py-3 px-4 font-mono text-[11px]">
+                          {/* Due Time - Converted to compact icon badge */}
+                          <td className="py-3 px-4 font-mono text-[11px] text-center">
                             {card ? (
-                              <span
-                                className={
-                                  isDue
-                                    ? 'text-rose-600 font-bold'
-                                    : 'text-text-secondary'
-                                }
-                              >
-                                {isDue ? 'Đến hạn ngay' : formatRelativeTime(card.dueAt)}
-                              </span>
+                              isDue ? (
+                                <span
+                                  title="Đến hạn ôn ngay (FSRS)"
+                                  className="inline-flex items-center justify-center p-1.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-200/80 shadow-2xs group-hover:scale-105 transition-transform"
+                                >
+                                  <Flame className="w-4 h-4 fill-rose-500 text-rose-500 animate-pulse" />
+                                </span>
+                              ) : (
+                                <span
+                                  title={`Hạn ôn: ${formatRelativeTime(card.dueAt)}`}
+                                  className="inline-flex items-center gap-1 text-[11px] text-text-secondary"
+                                >
+                                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <span>{formatRelativeTime(card.dueAt)}</span>
+                                </span>
+                              )
                             ) : (
                               <span className="text-slate-400">—</span>
                             )}
                           </td>
 
-                          {/* Actions */}
+                          {/* Actions - Converted to icon button */}
                           <td className="py-3 px-4 text-right">
                             <button
                               onClick={(e) => {
@@ -475,9 +583,11 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                                 setSelectedWord(item);
                                 setDetailModalOpen(true);
                               }}
-                              className="px-2 py-1 text-[11px] font-semibold text-brand-primary hover:bg-brand-primarySoft rounded-md transition-colors"
+                              title="Xem chi tiết & Chỉnh sửa"
+                              aria-label="Chi tiết"
+                              className="p-1.5 text-brand-primary hover:text-white hover:bg-brand-primary bg-brand-primarySoft/60 rounded-lg transition-all duration-150 active:scale-95 inline-flex items-center justify-center shadow-2xs"
                             >
-                              Chi tiết
+                              <Eye className="w-4 h-4" />
                             </button>
                           </td>
                         </tr>
@@ -561,6 +671,120 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
           setSelectedWord(null);
         }}
       />
+
+      {/* Floating Batch Action Toolbar */}
+      <AnimatePresence>
+        {selectedIds.size > 0 && activeTab === 'my-vocab' && (
+          <motion.div
+            initial={{ y: 60, opacity: 0, scale: 0.95 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: 60, opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-brand-ink text-white px-5 py-3 rounded-2xl shadow-elevated border border-white/10 flex items-center gap-3.5 text-xs backdrop-blur-md"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-brand-primary text-white flex items-center justify-center font-bold text-[11px]">
+                {selectedIds.size}
+              </span>
+              <span className="font-semibold text-slate-200">từ đã chọn</span>
+            </div>
+
+            <div className="h-4 w-px bg-white/20" />
+
+            <button
+              type="button"
+              onClick={() => {
+                setBatchTargetDeckId(decks[0]?.id || '');
+                setBatchMoveModalOpen(true);
+              }}
+              disabled={isBatchProcessing}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium flex items-center gap-1.5 transition-colors active:scale-95 disabled:opacity-50"
+            >
+              <Folder className="w-3.5 h-3.5 text-brand-mint" />
+              <span>Chuyển chủ đề / bộ từ</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBatchDelete}
+              disabled={isBatchProcessing}
+              className="px-3 py-1.5 rounded-lg bg-rose-500/80 hover:bg-rose-600 text-white font-semibold flex items-center gap-1.5 transition-colors active:scale-95 disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Xóa đã chọn</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-white/10 transition-colors"
+              title="Bỏ chọn tất cả"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Batch Move To Topic / Deck Modal */}
+      {batchMoveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-surface-base rounded-card shadow-elevated border border-slate-200/90 w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-bold text-sm text-brand-ink flex items-center gap-2">
+                <Folder className="w-4 h-4 text-brand-primary" />
+                <span>Chuyển {selectedIds.size} từ vựng sang bộ từ / chủ đề khác</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setBatchMoveModalOpen(false)}
+                className="text-slate-400 hover:text-brand-ink"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-text-secondary">
+              Tất cả các từ vựng được chọn sẽ được phân loại vào bộ từ mới được chỉ định bên dưới.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-brand-ink">
+                Chọn bộ từ đích (kèm chủ đề):
+              </label>
+              <select
+                value={batchTargetDeckId}
+                onChange={(e) => setBatchTargetDeckId(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control font-medium focus:outline-none focus:border-brand-primary"
+              >
+                {decks.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.topicGroup || 'Chung'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setBatchMoveModalOpen(false)}
+                className="px-3.5 py-1.5 border border-slate-200 rounded-control text-xs font-semibold text-text-secondary hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchMove}
+                disabled={isBatchProcessing || !batchTargetDeckId}
+                className="px-4 py-1.5 bg-brand-primary hover:bg-brand-primaryHover text-white rounded-control text-xs font-bold shadow-xs disabled:opacity-50"
+              >
+                {isBatchProcessing ? 'Đang chuyển...' : 'Xác nhận chuyển'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

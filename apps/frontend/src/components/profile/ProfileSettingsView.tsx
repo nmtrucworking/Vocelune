@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   User,
   Settings,
@@ -10,6 +10,9 @@ import {
   RotateCcw,
   Check,
   AlertCircle,
+  Camera,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { Dialect } from '@/types';
@@ -18,7 +21,12 @@ import { DictionarySourceSelect } from '../dictionary/DictionarySourceSelect';
 import { speakWord } from '@/lib/speech';
 
 export function ProfileSettingsView() {
-  const { settings, updateSettings, logout } = useVocelune();
+  const { user, settings, updateSettings, uploadAvatar, removeAvatar, logout } = useVocelune();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [avatarSuccess, setAvatarSuccess] = useState<string | null>(null);
 
   const { providers, error: dictionaryError } = useDictionaryProviders();
   const [dictionaryProvider, setDictionaryProvider] = useState<DictionaryProvider>(settings.dictionaryProvider || 'free_dictionary');
@@ -31,6 +39,39 @@ export function ProfileSettingsView() {
   const [timezone, setTimezone] = useState(settings.timezone);
   const [dayStartHour, setDayStartHour] = useState(settings.dayStartHour);
   const [isSaved, setIsSaved] = useState(false);
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarError(null);
+    setAvatarSuccess(null);
+    setIsUploadingAvatar(true);
+    try {
+      await uploadAvatar(file);
+      setAvatarSuccess('Cập nhật ảnh đại diện thành công!');
+      setTimeout(() => setAvatarSuccess(null), 3000);
+    } catch (err: any) {
+      setAvatarError(err?.message || 'Không thể tải ảnh đại diện lên.');
+    } finally {
+      setIsUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setAvatarError(null);
+    setAvatarSuccess(null);
+    setIsUploadingAvatar(true);
+    try {
+      await removeAvatar();
+      setAvatarSuccess('Đã gỡ ảnh đại diện.');
+      setTimeout(() => setAvatarSuccess(null), 3000);
+    } catch (err: any) {
+      setAvatarError(err?.message || 'Không thể gỡ ảnh đại diện.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,10 +97,83 @@ export function ProfileSettingsView() {
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* User Profile Card */}
-        <div className="bg-surface-base border border-slate-200/90 rounded-card shadow-card p-6 space-y-4">
+        <div className="bg-surface-base border border-slate-200/90 rounded-card shadow-card p-6 space-y-6">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <User className="w-4 h-4 text-brand-primary" />
             <h3 className="text-sm font-semibold text-brand-ink">Thông tin cá nhân</h3>
+          </div>
+
+          {/* Avatar Section */}
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 p-4 rounded-xl bg-slate-50/70 border border-slate-100">
+            <div className="relative group shrink-0">
+              <div className="w-20 h-20 rounded-full overflow-hidden ring-4 ring-white shadow-md bg-gradient-to-tr from-brand-primary to-indigo-600 flex items-center justify-center text-white text-2xl font-bold">
+                {user?.avatarUrl ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt={settings.displayName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span>{displayName ? displayName.charAt(0).toUpperCase() : 'U'}</span>
+                )}
+              </div>
+              {isUploadingAvatar && (
+                <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center text-white">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 text-center sm:text-left space-y-2">
+              <div>
+                <h4 className="text-xs font-semibold text-brand-ink">Ảnh đại diện</h4>
+                <p className="text-[11px] text-text-secondary mt-0.5">
+                  Định dạng PNG, JPEG hoặc WebP (tối đa 5MB). Lưu trữ trực tiếp trên Cloudflare R2.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleAvatarChange}
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  disabled={isUploadingAvatar}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-control bg-brand-primary text-white hover:bg-brand-primary/90 transition-colors disabled:opacity-50 shadow-xs"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>{user?.avatarUrl ? 'Đổi ảnh' : 'Tải ảnh lên'}</span>
+                </button>
+
+                {user?.avatarUrl && (
+                  <button
+                    type="button"
+                    disabled={isUploadingAvatar}
+                    onClick={handleRemoveAvatar}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-control bg-white border border-slate-200 text-slate-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50/50 transition-colors disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Gỡ ảnh</span>
+                  </button>
+                )}
+              </div>
+
+              {avatarSuccess && (
+                <p className="text-[11px] text-emerald-600 flex items-center justify-center sm:justify-start gap-1 font-medium">
+                  <Check className="w-3 h-3" /> {avatarSuccess}
+                </p>
+              )}
+              {avatarError && (
+                <p className="text-[11px] text-red-600 flex items-center justify-center sm:justify-start gap-1 font-medium">
+                  <AlertCircle className="w-3 h-3" /> {avatarError}
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -89,7 +203,7 @@ export function ProfileSettingsView() {
           <h3 className="text-sm font-semibold">Từ điển mặc định</h3>
           <DictionarySourceSelect id="profile-dictionary" value={dictionaryProvider} providers={providers} onChange={setDictionaryProvider} />
           <p className="text-xs text-text-secondary">Nguồn này được dùng mặc định khi thêm từ. Bạn có thể đổi riêng cho mỗi lần tra cứu.</p>
-          <label className="flex gap-2 items-start text-xs"><input type="checkbox" checked={dictionaryFallbackEnabled} onChange={e => setDictionaryFallbackEnabled(e.target.checked)} />Cho phép thử Free Dictionary API nếu nguồn có API key lỗi hoặc không tìm thấy từ.</label>
+          <label className="flex gap-2 items-start text-xs"><input type="checkbox" checked={dictionaryFallbackEnabled} onChange={e => setDictionaryFallbackEnabled(e.target.checked)} />Cho phép thử nhiều nguồn dự phòng khi nguồn chọn thủ công lỗi hoặc không tìm thấy từ. Chế độ Tự động luôn có dự phòng.</label>
           {dictionaryError && <p className="text-xs text-amber-800">{dictionaryError}</p>}
           <ul className="text-xs space-y-1 text-text-secondary">{providers.map(provider => <li key={provider.id}>{provider.name}: {provider.configured ? 'Sẵn sàng' : 'Chưa cấu hình'}{provider.configured && !provider.persistenceSupported ? ' · Chỉ xem tham khảo' : ''}</li>)}</ul>
         </section>

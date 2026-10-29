@@ -4,7 +4,7 @@ import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Database } from '../common/db';
 import { AuthRequest, fail } from '../common/http';
-import { config } from '../common/config';
+import { config, getAllowedOrigins } from '../common/config';
 
 export const Public = () => SetMetadata('public', true);
 export const secret = () => randomBytes(32).toString('base64url');
@@ -22,8 +22,12 @@ export async function passwordMatches(password: string, stored: string) {
   const expected = Buffer.from(hex, 'hex');
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
-export const COOKIE = config.NODE_ENV === 'production' ? '__Host-vocelune_session' : 'vocelune_session';
-export const CSRF_COOKIE = config.NODE_ENV === 'production' ? '__Host-vocelune_csrf' : 'vocelune_csrf';
+export const COOKIE = config.NODE_ENV === 'production'
+  ? (config.COOKIE_DOMAIN ? '__Secure-vocelune_session' : '__Host-vocelune_session')
+  : 'vocelune_session';
+export const CSRF_COOKIE = config.NODE_ENV === 'production'
+  ? (config.COOKIE_DOMAIN ? '__Secure-vocelune_csrf' : '__Host-vocelune_csrf')
+  : 'vocelune_csrf';
 
 @Injectable()
 export class SessionGuard implements CanActivate {
@@ -32,11 +36,11 @@ export class SessionGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<AuthRequest>();
     const publicRoute = this.reflector.getAllAndOverride<boolean>('public', [context.getHandler(), context.getClass()]);
     const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
-    if (mutating && req.headers.origin && req.headers.origin !== config.APP_ORIGIN) {
+    if (mutating && req.headers.origin && !getAllowedOrigins().includes(req.headers.origin)) {
       fail(403, 'ORIGIN_DENIED', 'Nguồn yêu cầu không được phép.');
     }
     if (publicRoute || req.method === 'OPTIONS') return true;
-    const token = req.cookies?.[COOKIE];
+    const token = req.cookies?.[COOKIE] || req.cookies?.['__Secure-vocelune_session'] || req.cookies?.['__Host-vocelune_session'] || req.cookies?.['vocelune_session'];
     if (typeof token !== 'string') fail(401, 'UNAUTHENTICATED', 'Vui lòng đăng nhập.');
     const session = await this.db.authSession.findUnique({ where: { tokenHash: hash(token) }, include: { user: true } });
     if (!session || session.revokedAt || session.expiresAt <= new Date()) fail(401, 'UNAUTHENTICATED', 'Phiên đăng nhập đã hết hạn.');

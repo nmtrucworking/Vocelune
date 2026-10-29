@@ -118,7 +118,9 @@ Dự án đã có sẵn tệp cấu hình **[render.yaml](file:///Users/nguyenmi
 | `NODE_ENV` | `production` |
 | `PORT` | `10000` |
 | `DATABASE_URL` | `postgresql://postgres.[REF]:[PASS]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?schema=public` |
-| `APP_ORIGIN` | `https://vocelune-frontend.onrender.com` (hoặc domain Cloudflare Pages của bạn) |
+| `APP_ORIGIN` | `https://vocelune.nguyenminhtruc.site` (hoặc URL chính của website) |
+| `ALLOWED_ORIGINS` | `https://vocelune.nguyenminhtruc.site,https://workspace.vocelune.nguyenminhtruc.site` (danh sách domain cho phép CORS và API mutations) |
+| `COOKIE_DOMAIN` | `.vocelune.nguyenminhtruc.site` (để chia sẻ phiên cookie SSO giữa website và workspace) |
 | `REDIS_URL` | Lấy từ `vocelune-redis` hoặc Upstash Redis URL |
 | `SESSION_DAYS` | `30` |
 | `EMAIL_ENCRYPTION_KEY` | Tạo chuỗi ngẫu nhiên 64 ký tự hex (`openssl rand -hex 32`) |
@@ -148,6 +150,8 @@ Dự án Vocelune được tối ưu hóa theo mô hình **Next.js Static HTML E
 3. Biến môi trường (Environment Variables):
    * `NODE_VERSION`: `22`
    * `API_PROXY_TARGET`: URL backend Render (ví dụ `https://vocelune-api.onrender.com`).
+   * `NEXT_PUBLIC_SITE_URL`: `https://vocelune.nguyenminhtruc.site` (Domain trang chủ & marketing)
+   * `NEXT_PUBLIC_WORKSPACE_URL`: `https://workspace.vocelune.nguyenminhtruc.site` (Domain không gian học tập)
 4. Bấm **Save** và bấm **Retry build**.
 
 ### Tùy chọn B: Triển khai Frontend trên Render

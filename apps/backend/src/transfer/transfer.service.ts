@@ -10,6 +10,7 @@ import { VocabularyService, vocabSchema, VocabInput } from '../vocabulary/vocabu
 import { vocabDto, cardDto, deckDto, reviewDto } from '../common/serializers';
 import { TestsService } from '../tests/tests.service';
 import { inspectXlsx } from './xlsx';
+import { hasRestrictedContent, redactForSharing } from '../integrations/dictionary/license-policy';
 
 type ImportRow = { rowNumber: number; data?: VocabInput; error?: unknown; duplicateId?: string; status: 'pending' | 'created' | 'updated' | 'skipped' | 'failed'; resultId?: string };
 const aliases: Record<string, string> = { part_of_speech: 'partOfSpeech', meaning_vi: 'meaningVi', definition_en: 'definitionEn', example_en: 'exampleEn', example_vi: 'exampleVi', ipa: 'phonetic', cefr_level: 'cefr', note: 'notes', card_templates: 'templates' };
@@ -174,19 +175,10 @@ export class TransferService {
       const reviews = await tx.reviewLog.findMany({ where: { userId } });
       const attempts = await tx.testAttempt.findMany({ where: { userId }, include: { questions: { orderBy: { ordinal: 'asc' } }, definition: true } });
       const licensed = await tx.vocabItem.findMany({ where: { userId, sourceKind: 'licensed' }, select: { id: true, provenance: true } });
-      const restrictedIds = new Set(licensed.filter(item => {
-        const provenance = item.provenance as { provider?: string; licenseMode?: string; persistedFields?: string[]; exportableFields?: string[] } | null;
-        return !provenance || provenance.provider !== 'free_dictionary' || provenance.licenseMode !== 'OPEN_LICENSE' || (provenance.persistedFields ?? []).some(field => !provenance.exportableFields?.includes(field));
-      }).map(v => v.id));
+      const restrictedIds = new Set(licensed.filter(item => hasRestrictedContent({ ...item, sourceKind: 'licensed' })).map(v => v.id));
       const { userId: _, ...settings } = user.settings!;
       return { schemaVersion: 1, exportedAt: new Date().toISOString(), user: { ...user, settings }, vocabulary: vocabulary.map(item => {
-        const dto = vocabDto(item);
-        if (item.sourceKind === 'licensed') {
-          const provenance = item.provenance as { provider?: string; licenseMode?: string; persistedFields?: string[]; exportableFields?: string[] } | null;
-          const exportable = provenance?.provider === 'free_dictionary' && provenance.licenseMode === 'OPEN_LICENSE' ? provenance.exportableFields ?? [] : [];
-          for (const field of provenance?.persistedFields ?? []) if (['definitionEn', 'exampleEn', 'phonetic'].includes(field) && !exportable.includes(field)) (dto as any)[field] = '';
-        }
-        return dto;
+        return redactForSharing(vocabDto(item));
       }), decks: decks.map(deckDto), cards: cards.map(cardDto), reviewLogs: reviews.map(reviewDto), testAttempts: attempts.map(a => {
         const dto = this.tests.dto(a);
         return { ...dto, questions: dto.questions.map(q => restrictedIds.has(q.vocabId) ? { id: q.id, vocabId: q.vocabId, contentRedacted: true } : q) };

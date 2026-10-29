@@ -43,7 +43,7 @@ export function AuthForm({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'error' | 'success' } | null>(null);
 
-  const destination = redirectTo || searchParams.get('redirect') || '/app/dashboard';
+  const destination = redirectTo || searchParams.get('redirect') || '/dashboard';
 
   // If already logged in, redirect
   useEffect(() => {

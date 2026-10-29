@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Layers,
   Search,
@@ -24,14 +25,14 @@ import { useVocelune } from '@/context/VoceluneContext';
 import { Deck, VocabItem } from '@/types';
 import { Pagination } from '../common/Pagination';
 
-const DEFAULT_TOPIC_NAMES = [
-  'Chung',
+const SUGGESTED_TOPIC_NAMES = [
   'IELTS / Academic',
   'Giao tiếp hàng ngày',
   'Công sở / Business',
   'Du lịch & Đời sống',
-  'Công nghệ / Kỹ thuật',
+  'Công nghệ / IT',
   'Ngữ pháp & Cấu trúc',
+  'TOEIC Essential',
 ];
 
 interface TopicGroupDetail {
@@ -116,18 +117,18 @@ export function TopicManager({
   const allTopicGroups: TopicGroupDetail[] = useMemo(() => {
     const groupMap = new Map<string, Deck[]>();
 
-    // Seed with defaults
-    for (const def of DEFAULT_TOPIC_NAMES) {
-      groupMap.set(def, []);
-    }
-
-    // Add user decks
+    // Add user decks dynamically
     for (const d of decks) {
-      const g = d.topicGroup || 'Chung';
+      const g = d.topicGroup?.trim() || 'Chung';
       if (!groupMap.has(g)) {
         groupMap.set(g, []);
       }
       groupMap.get(g)!.push(d);
+    }
+
+    // Always guarantee 'Chung' exists if list is empty
+    if (groupMap.size === 0) {
+      groupMap.set('Chung', []);
     }
 
     const result: TopicGroupDetail[] = [];
@@ -142,7 +143,7 @@ export function TopicManager({
 
       result.push({
         name,
-        isDefault: DEFAULT_TOPIC_NAMES.includes(name),
+        isDefault: name === 'Chung',
         decks: deckList,
         wordCount: totalWords,
         dueCardCount: totalDue,
@@ -151,6 +152,8 @@ export function TopicManager({
 
     // Sort: topics with decks first, then alphabetically
     return result.sort((a, b) => {
+      if (a.name === 'Chung') return -1;
+      if (b.name === 'Chung') return 1;
       if (a.decks.length > 0 && b.decks.length === 0) return -1;
       if (a.decks.length === 0 && b.decks.length > 0) return 1;
       return a.name.localeCompare(b.name);
@@ -382,9 +385,12 @@ export function TopicManager({
       {/* Topic Groups Grid */}
       {paginatedTopics.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {paginatedTopics.map((topic) => (
-            <div
+          {paginatedTopics.map((topic, idx) => (
+            <motion.div
               key={topic.name}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, delay: idx * 0.04 }}
               className="bg-surface-base border border-slate-200/90 rounded-card shadow-card hover:shadow-elevated transition-all flex flex-col justify-between overflow-hidden group"
             >
               {/* Card Header */}
@@ -532,7 +538,7 @@ export function TopicManager({
                   <span>Thêm bộ từ</span>
                 </button>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       ) : (
@@ -600,6 +606,29 @@ export function TopicManager({
                   onChange={(e) => setNewTopicName(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
                 />
+              </div>
+
+              {/* Quick Suggestion Chips */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] text-text-secondary font-medium">
+                  Gợi ý chủ đề nhanh:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {SUGGESTED_TOPIC_NAMES.map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setNewTopicName(sug)}
+                      className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-all ${
+                        newTopicName === sug
+                          ? 'bg-brand-primary text-white border-brand-primary shadow-xs'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-brand-primary hover:text-brand-primary'
+                      }`}
+                    >
+                      {sug}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Assign existing decks */}

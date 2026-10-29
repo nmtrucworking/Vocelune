@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthForm } from '../auth/AuthForm';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { QuickAddModal } from '../library/QuickAddModal';
 import { useVocelune } from '@/context/VoceluneContext';
+import { isWorkspaceHost, getWorkspaceUrl } from '@/lib/urls';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -16,6 +17,18 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const { isLoaded, user, error, clearError, refresh } = useVocelune();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const { hostname, pathname, search } = window.location;
+      if (!isWorkspaceHost(hostname) && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+        const target = getWorkspaceUrl(pathname + search);
+        if (target !== pathname + search) {
+          window.location.replace(target);
+        }
+      }
+    }
+  }, []);
 
   if (!isLoaded) {
     return (
