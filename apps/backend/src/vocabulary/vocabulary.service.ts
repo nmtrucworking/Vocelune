@@ -51,7 +51,7 @@ export class VocabularyService {
     if (!vocab) fail(404, 'NOT_FOUND', 'Không tìm thấy từ vựng.');
     return vocab;
   }
-  senseKey(input: Pick<VocabInput, 'meaningVi' | 'definitionEn'>) { return hash(normalized(input.meaningVi) + '\0' + normalized(input.definitionEn)); }
+  senseKey(input: { meaningVi?: string; definitionEn?: string }) { return hash(normalized(input.meaningVi) + '\0' + normalized(input.definitionEn)); }
   async createInTx(tx: Tx, userId: string, input: VocabInput, allowDuplicate = false) {
     const deckIds = [...new Set([input.deckId, ...(input.deckIds ?? [])])];
     for (const deckId of deckIds) await this.requireDeck(tx, userId, deckId);

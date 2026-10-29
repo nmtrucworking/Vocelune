@@ -8,6 +8,8 @@ import {
   Menu,
   Plus,
   Volume2,
+  VolumeX,
+  Bell,
   Settings,
   LogOut,
   ChevronDown,
@@ -21,6 +23,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
+import { useNotification } from '@/context/NotificationContext';
 import { speakWord } from '@/lib/speech';
 
 interface NavbarProps {
@@ -32,6 +35,7 @@ interface NavbarProps {
 export function Navbar({ onOpenMobileSidebar, onOpenQuickAdd, pageTitle }: NavbarProps) {
   const router = useRouter();
   const { user, settings, streak, vocabItems, observedRetention, logout } = useVocelune();
+  const { notify, soundEnabled, toggleSound, browserPushSupported, browserPushPermission, requestBrowserPermission } = useNotification();
   const [popoverOpen, setPopoverOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -91,14 +95,31 @@ export function Navbar({ onOpenMobileSidebar, onOpenQuickAdd, pageTitle }: Navba
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Sound FX Toggle */}
+        <button
+          onClick={toggleSound}
+          title={soundEnabled ? 'Âm thanh thông báo: Đang bật (Click để tắt)' : 'Âm thanh thông báo: Đang tắt (Click để bật)'}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-control transition-colors ${
+            soundEnabled
+              ? 'text-slate-700 hover:text-brand-primary bg-slate-100 hover:bg-slate-200/80'
+              : 'text-slate-400 hover:text-slate-600 bg-slate-100/60'
+          }`}
+        >
+          {soundEnabled ? (
+            <Volume2 className="w-3.5 h-3.5 text-brand-primary" />
+          ) : (
+            <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+          )}
+          <span className="hidden sm:inline">{soundEnabled ? 'Âm thanh' : 'Tắt âm'}</span>
+        </button>
+
         {/* Audio Dialect Quick Tester */}
         <button
           onClick={handleTestAudio}
           title={`Phát âm mẫu (${settings.englishDialect.toUpperCase()})`}
           className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:text-brand-primary bg-slate-100 hover:bg-brand-primarySoft rounded-control transition-colors"
         >
-          <Volume2 className="w-3.5 h-3.5 text-brand-primary" />
-          <span className="uppercase">{settings.englishDialect}</span>
+          <span className="uppercase font-mono text-[11px]">{settings.englishDialect}</span>
         </button>
 
         {/* Quick Add Button */}
@@ -260,6 +281,40 @@ export function Navbar({ onOpenMobileSidebar, onOpenQuickAdd, pageTitle }: Navba
                     <FileSpreadsheet className="w-4 h-4 text-slate-400" />
                     <span>Nhập / Xuất dữ liệu</span>
                   </Link>
+                </div>
+
+                {/* Notifications & Audio Feedback Settings */}
+                <div className="p-2 space-y-1 bg-slate-50/70 border-t border-slate-100 text-xs">
+                  <div className="px-2 py-1 flex items-center justify-between text-slate-600 font-semibold text-[11px] uppercase tracking-wider">
+                    <span>Thông báo & Âm thanh</span>
+                    <Bell className="w-3.5 h-3.5 text-brand-primary" />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      notify.success(
+                        'Vocelune Push Notification',
+                        'Âm thanh trực quan và thông báo đẩy đang hoạt động hoàn hảo!',
+                        { browserPush: true }
+                      );
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-brand-primary hover:bg-brand-primarySoft font-medium flex items-center justify-between transition-colors"
+                  >
+                    <span>Thử thông báo & chuông</span>
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </button>
+
+                  {browserPushSupported && browserPushPermission !== 'granted' && (
+                    <button
+                      type="button"
+                      onClick={() => void requestBrowserPermission()}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-emerald-700 hover:bg-emerald-50 font-medium flex items-center justify-between transition-colors"
+                    >
+                      <span>Bật thông báo đẩy trình duyệt</span>
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Footer Action: Logout */}

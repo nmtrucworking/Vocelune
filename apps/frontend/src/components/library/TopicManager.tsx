@@ -22,6 +22,7 @@ import {
   Play,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
+import { useNotification } from '@/context/NotificationContext';
 import { Deck, VocabItem } from '@/types';
 import { Pagination } from '../common/Pagination';
 
@@ -53,6 +54,7 @@ export function TopicManager({
   onOpenCreateDeck,
 }: TopicManagerProps) {
   const router = useRouter();
+  const { notify } = useNotification();
   const {
     decks,
     vocabItems,
@@ -85,10 +87,6 @@ export function TopicManager({
   const [moveToTopicGroup, setMoveToTopicGroup] = useState<string>('Chung');
 
   const [busy, setBusy] = useState(false);
-  const [feedbackMessage, setFeedbackMessage] = useState<{
-    text: string;
-    type: 'success' | 'error';
-  } | null>(null);
 
   // Map word count and due cards per deck
   const { deckWordCount, deckDueCount } = useMemo(() => {
@@ -193,7 +191,6 @@ export function TopicManager({
     if (!trimmed) return;
 
     setBusy(true);
-    setFeedbackMessage(null);
     try {
       // If user selected existing decks to assign to this new topic
       if (selectedDecksToAssign.length > 0) {
@@ -201,18 +198,12 @@ export function TopicManager({
           await updateDeck(deckId, { topicGroup: trimmed });
         }
       }
-      setFeedbackMessage({
-        type: 'success',
-        text: `Đã khởi tạo chủ đề "${trimmed}" thành công!`,
-      });
+      notify.success('Đã tạo chủ đề mới!', `Chủ đề "${trimmed}" đã được khởi tạo thành công.`);
       setCreateModalOpen(false);
       setNewTopicName('');
       setSelectedDecksToAssign([]);
     } catch (err) {
-      setFeedbackMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Không thể tạo chủ đề.',
-      });
+      notify.error('Không thể tạo chủ đề', err instanceof Error ? err.message : 'Lỗi không xác định.');
     } finally {
       setBusy(false);
     }
@@ -223,21 +214,14 @@ export function TopicManager({
     if (!targetRenameTopic || !renamedName.trim()) return;
 
     setBusy(true);
-    setFeedbackMessage(null);
     try {
       await renameTopicGroup(targetRenameTopic, renamedName.trim());
-      setFeedbackMessage({
-        type: 'success',
-        text: `Đã đổi tên chủ đề thành "${renamedName.trim()}".`,
-      });
+      notify.success('Đã đổi tên chủ đề!', `Chủ đề đã được cập nhật thành "${renamedName.trim()}".`);
       setRenameModalOpen(false);
       setTargetRenameTopic(null);
       setRenamedName('');
     } catch (err) {
-      setFeedbackMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Không thể đổi tên chủ đề.',
-      });
+      notify.error('Không thể đổi tên chủ đề', err instanceof Error ? err.message : 'Lỗi không xác định.');
     } finally {
       setBusy(false);
     }
@@ -248,20 +232,13 @@ export function TopicManager({
     if (!targetDeleteTopic) return;
 
     setBusy(true);
-    setFeedbackMessage(null);
     try {
       await deleteTopicGroup(targetDeleteTopic, reassignTargetGroup);
-      setFeedbackMessage({
-        type: 'success',
-        text: `Đã xóa chủ đề "${targetDeleteTopic}". Các bộ từ đã được chuyển sang "${reassignTargetGroup}".`,
-      });
+      notify.info('Đã xóa chủ đề', `Đã xóa "${targetDeleteTopic}". Các bộ từ đã được chuyển sang "${reassignTargetGroup}".`);
       setDeleteModalOpen(false);
       setTargetDeleteTopic(null);
     } catch (err) {
-      setFeedbackMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Không thể xóa chủ đề.',
-      });
+      notify.error('Không thể xóa chủ đề', err instanceof Error ? err.message : 'Lỗi không xác định.');
     } finally {
       setBusy(false);
     }
@@ -272,20 +249,13 @@ export function TopicManager({
     if (!selectedDeckToMove || !moveToTopicGroup) return;
 
     setBusy(true);
-    setFeedbackMessage(null);
     try {
       await updateDeck(selectedDeckToMove, { topicGroup: moveToTopicGroup });
-      setFeedbackMessage({
-        type: 'success',
-        text: 'Đã chuyển bộ từ sang chủ đề mới.',
-      });
+      notify.success('Đã chuyển bộ từ!', 'Bộ từ đã được di chuyển sang chủ đề mới.');
       setMoveDecksModalOpen(false);
       setSelectedDeckToMove('');
     } catch (err) {
-      setFeedbackMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Không thể chuyển bộ từ.',
-      });
+      notify.error('Không thể chuyển bộ từ', err instanceof Error ? err.message : 'Lỗi không xác định.');
     } finally {
       setBusy(false);
     }
@@ -324,26 +294,6 @@ export function TopicManager({
           </button>
         </div>
       </div>
-
-      {/* Feedback Banner */}
-      {feedbackMessage && (
-        <div
-          className={`p-3.5 rounded-control text-xs flex items-center justify-between gap-2.5 ${
-            feedbackMessage.type === 'success'
-              ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
-              : 'bg-rose-50 border border-rose-200 text-rose-800'
-          }`}
-        >
-          <span>{feedbackMessage.text}</span>
-          <button
-            type="button"
-            onClick={() => setFeedbackMessage(null)}
-            className="text-slate-400 hover:text-slate-600"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
 
       {/* Search & Overview Stats Bar */}
       <div className="bg-surface-base border border-slate-200/80 rounded-card p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">

@@ -6,11 +6,18 @@ export class Database extends PrismaClient implements OnModuleInit, OnModuleDest
   async onModuleInit() { await this.$connect(); }
   async onModuleDestroy() { await this.$disconnect(); }
   // Serialize writes for one owner, including absent-row/idempotency checks.
-  async forUser<T>(userId: string, action: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-    return this.$transaction(async tx => {
-      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId}::uuid FOR UPDATE`;
-      return action(tx);
-    }, { timeout: 30000 });
+  async forUser<T>(
+    userId: string,
+    action: (tx: Prisma.TransactionClient) => Promise<T>,
+    options?: { timeout?: number }
+  ): Promise<T> {
+    return this.$transaction(
+      async tx => {
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId}::uuid FOR UPDATE`;
+        return action(tx);
+      },
+      { timeout: options?.timeout ?? 30000 }
+    );
   }
 }
 export type Tx = Prisma.TransactionClient;

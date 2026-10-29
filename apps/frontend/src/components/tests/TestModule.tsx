@@ -18,6 +18,7 @@ import {
   History,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
+import { useNotification } from '@/context/NotificationContext';
 import { VocabItem, TestAttempt, TestQuestion, CEFRLevel, PartOfSpeech } from '@/types';
 import { api, post } from '@/lib/api';
 import { speakWord } from '@/lib/speech';
@@ -29,6 +30,7 @@ type TestState = 'builder' | 'running' | 'completed';
 export function TestModule() {
   const { vocabItems, decks, testAttempts, refresh, cards, user, settings } =
     useVocelune();
+  const { notify } = useNotification();
 
   // Test Builder Configuration
   const [selectedDeckId, setSelectedDeckId] = useState<string>('all');
@@ -76,59 +78,127 @@ export function TestModule() {
     return () => { autosaveTimers.current.forEach(clearTimeout); };
   }, [user?.id]);
   const handleStartTest = async () => {
-    if (submitting.current) return; submitting.current = true; setTestError('');
+    if (submitting.current) return;
+    submitting.current = true;
+    setTestError('');
     try {
-      const definition = await post<{ id: string }>('/tests', { title: `Bài kiểm tra (${questionCount} câu)`, deckIds: selectedDeckId === 'all' ? [] : [selectedDeckId], cefr: selectedCefr === 'all' ? [] : [selectedCefr], size: questionCount, mode: testMode, durationSeconds: timeLimitMinutes * 60 });
+      const definition = await post<{ id: string }>('/tests', {
+        title: `Bài kiểm tra (${questionCount} câu)`,
+        deckIds: selectedDeckId === 'all' ? [] : [selectedDeckId],
+        cefr: selectedCefr === 'all' ? [] : [selectedCefr],
+        size: questionCount,
+        mode: testMode,
+        durationSeconds: timeLimitMinutes * 60,
+      });
       const attempt = await post<TestAttempt>(`/tests/${definition.id}/attempts`);
-      sessionStorage.setItem(`vocelune_active_test_${user!.id}`, attempt.id); loadAttempt(attempt);
-    } catch (e) { setTestError(e instanceof Error ? e.message : 'Không thể tạo bài kiểm tra.'); }
-    finally { submitting.current = false; }
+      sessionStorage.setItem(`vocelune_active_test_${user!.id}`, attempt.id);
+      loadAttempt(attempt);
+      notify.info('Bắt đầu bài kiểm tra!', `Thời lượng: ${timeLimitMinutes} phút. Chúc bạn làm bài tốt!`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Không thể tạo bài kiểm tra.';
+      setTestError(msg);
+      notify.error('Lỗi tạo bài thi', msg);
+    } finally {
+      submitting.current = false;
+    }
   };
   const handleSelectAnswer = (qId: string, answer: string) => {
-    setAnswers(previous => ({ ...previous, [qId]: answer }));
+    setAnswers((previous) => ({ ...previous, [qId]: answer }));
     const clientSequence = (answerSequences.current.get(qId) || 0) + 1;
     answerSequences.current.set(qId, clientSequence);
-    const timer = autosaveTimers.current.get(qId); if (timer) clearTimeout(timer);
-    autosaveTimers.current.set(qId, setTimeout(() => {
-      const attempt = activeAttempt.current; if (!attempt || submitting.current) return;
-      void api(`/test-attempts/${attempt.id}/answers/${qId}`, { method: 'PUT', body: JSON.stringify({ answer, clientSequence }) }).catch(e => setTestError(e.message));
-    }, 500));
+    const timer = autosaveTimers.current.get(qId);
+    if (timer) clearTimeout(timer);
+    autosaveTimers.current.set(
+      qId,
+      setTimeout(() => {
+        const attempt = activeAttempt.current;
+        if (!attempt || submitting.current) return;
+        void api(`/test-attempts/${attempt.id}/answers/${qId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ answer, clientSequence }),
+        }).catch((e) => {
+          const msg = e instanceof Error ? e.message : 'Lỗi tự động lưu đáp án.';
+          setTestError(msg);
+          notify.warning('Tự động lưu chưa thành công', msg);
+        });
+      }, 500)
+    );
   };
   const handleSubmitTest = async () => {
     if (!activeAttempt.current || submitting.current) return;
-    submitting.current = true; setTestError(''); autosaveTimers.current.forEach(clearTimeout);
+    submitting.current = true;
+    setTestError('');
+    autosaveTimers.current.forEach(clearTimeout);
     try {
-      const result = await post<TestAttempt>(`/test-attempts/${activeAttempt.current.id}/submit`, { answers });
-      setCompletedAttempt(result); setTestState('completed'); sessionStorage.removeItem(`vocelune_active_test_${user!.id}`); await refresh();
+      const result = await post<TestAttempt>(`/test-attempts/${activeAttempt.current.id}/submit`, {
+        answers,
+      });
+      setCompletedAttempt(result);
+      setTestState('completed');
+      sessionStorage.removeItem(`vocelune_active_test_${user!.id}`);
+      await refresh();
+      notify.success(
+        'Đã hoàn thành bài kiểm tra!',
+        `Điểm đạt được: ${result.score}/${result.maxScore}`,
+        { browserPush: true }
+      );
       if (result.score / result.maxScore >= 0.7) triggerConfetti();
-    } catch (e) { setTestError(e instanceof Error ? e.message : 'Không thể nộp bài.'); }
-    finally { submitting.current = false; }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Không thể nộp bài.';
+      setTestError(msg);
+      notify.error('Lỗi nộp bài', msg);
+    } finally {
+      submitting.current = false;
+    }
   };
   useEffect(() => {
     if (testState !== 'running' || !activeAttempt.current) return;
     const tick = () => {
-      const remaining = Math.max(0, Math.ceil((new Date(activeAttempt.current!.deadlineAt!).getTime() - Date.now()) / 1000));
+      const remaining = Math.max(
+        0,
+        Math.ceil((new Date(activeAttempt.current!.deadlineAt!).getTime() - Date.now()) / 1000)
+      );
       setSecondsRemaining(remaining);
       if (remaining === 0) void handleSubmitTest();
     };
-    const timer = setInterval(tick, 1000); return () => clearInterval(timer);
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
   }, [testState, answers]);
   const applyTestToSRS = async () => {
     if (!completedAttempt || appliedToSRS) return;
-    const ratings = completedAttempt.questions.filter(q => selfRatings[q.id]).map(q => {
-      const card = cards.find(c => c.vocabItemId === q.vocabId && c.template === (q.direction || 'en_vi'));
-      return card ? { questionId: q.id, rating: selfRatings[q.id], expectedCardVersion: card.version } : null;
-    }).filter(Boolean);
-    if (!ratings.length) { setTestError('Chọn mức tự đánh giá cho ít nhất một câu có thẻ tương ứng.'); return; }
-    try { await post(`/test-attempts/${completedAttempt.id}/apply-srs`, { confirmation: true, ratings }); setAppliedToSRS(true); await refresh(); }
-    catch (e) { setTestError(e instanceof Error ? e.message : 'Không thể cập nhật lịch ôn.'); }
+    const ratings = completedAttempt.questions
+      .filter((q) => selfRatings[q.id])
+      .map((q) => {
+        const card = cards.find(
+          (c) => c.vocabItemId === q.vocabId && c.template === (q.direction || 'en_vi')
+        );
+        return card
+          ? { questionId: q.id, rating: selfRatings[q.id], expectedCardVersion: card.version }
+          : null;
+      })
+      .filter(Boolean);
+    if (!ratings.length) {
+      const msg = 'Chọn mức tự đánh giá cho ít nhất một câu có thẻ tương ứng.';
+      setTestError(msg);
+      notify.warning('Chưa chọn tự đánh giá', msg);
+      return;
+    }
+    try {
+      await post(`/test-attempts/${completedAttempt.id}/apply-srs`, { confirmation: true, ratings });
+      setAppliedToSRS(true);
+      await refresh();
+      notify.success('Đã đồng bộ vào FSRS!', 'Lịch ôn tập thẻ của bạn đã được cập nhật.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Không thể cập nhật lịch ôn.';
+      setTestError(msg);
+      notify.error('Lỗi cập nhật SRS', msg);
+    }
   };
 
   // BUILDER VIEW
   if (testState === 'builder') {
     return (
       <div className="space-y-8 max-w-4xl mx-auto">
-        {testError && <p role="alert" className="bg-rose-50 text-rose-700 p-3 rounded-lg text-sm">{testError}</p>}
         {/* Header */}
         <div>
           <h2 className="text-xl font-bold text-brand-ink">Tạo bài kiểm tra</h2>
@@ -319,7 +389,6 @@ export function TestModule() {
 
     return (
       <div className="max-w-2xl mx-auto space-y-6">
-        {testError && <p role="alert" className="bg-rose-50 text-rose-700 p-3 rounded-lg text-sm">{testError}</p>}
         {/* Top Header: Progress & Timer */}
         <div className="flex items-center justify-between text-xs">
           <div className="font-semibold text-brand-ink">
@@ -460,7 +529,6 @@ export function TestModule() {
 
     return (
       <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in zoom-in-95 duration-200">
-        {testError && <p role="alert" className="bg-rose-50 text-rose-700 p-3 rounded-lg text-sm">{testError}</p>}
         {/* Score Banner Card */}
         <div className="bg-surface-base border border-slate-200/90 rounded-card shadow-card p-6 md:p-8 text-center space-y-4">
           <div className="w-16 h-16 mx-auto rounded-full bg-brand-primarySoft text-brand-primary flex items-center justify-center">

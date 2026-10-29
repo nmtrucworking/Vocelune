@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { VoceluneProvider } from '@/context/VoceluneContext';
+import { NotificationProvider } from '@/context/NotificationContext';
+import { PushNotificationCenter } from '@/components/common/PushNotificationCenter';
 
 export const metadata: Metadata = {
   title: 'Vocelune — Mỗi từ, một nhịp nhớ',
@@ -49,7 +51,12 @@ export default function RootLayout({
         />
       </head>
       <body suppressHydrationWarning>
-        <VoceluneProvider>{children}</VoceluneProvider>
+        <NotificationProvider>
+          <VoceluneProvider>
+            {children}
+            <PushNotificationCenter />
+          </VoceluneProvider>
+        </NotificationProvider>
       </body>
     </html>
   );

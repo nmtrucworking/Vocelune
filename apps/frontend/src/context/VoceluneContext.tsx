@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { VocabItem, Deck, Card, ReviewLog, TestAttempt, UserSettings, FSRSRating, DailyActivity } from '@/types';
 import { INITIAL_SETTINGS } from '@/lib/seed-data';
 import { api, post, ApiError } from '@/lib/api';
+import { useNotification } from '@/context/NotificationContext';
 
 type User = { id: string; email: string; displayName: string; avatarAssetId?: string | null; avatarUrl?: string | null };
 type Overview = { forecastData: { day: string; cards: number }[]; forgettingCurveData: { day: string; retrievability: number; threshold: number }[]; averageStability: number; streak: number; observedRetention: number | null; sampleSize: number; todayReviewsCount: number; activityHeatmap: DailyActivity[]; weakWords: { vocab: VocabItem; lapses: number; reps: number }[] };
@@ -32,6 +33,7 @@ interface VoceluneContextType {
 }
 const VoceluneContext = createContext<VoceluneContextType | undefined>(undefined);
 export function VoceluneProvider({ children }: { children: React.ReactNode }) {
+  const { notify } = useNotification();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [isLoaded, setLoaded] = useState(false), [error, setError] = useState<string | null>(null);
   const [lastReview, setLastReview] = useState<{ id: string; at: number } | null>(null);
@@ -56,34 +58,101 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, [lastReview]);
   const perform = useCallback(async <T,>(action: () => Promise<T>): Promise<T> => {
-    try { const result = await action(); try { await refresh(); setError(null); } catch { setError('Đã lưu trên máy chủ. Chưa thể tải dữ liệu mới; vui lòng tải lại trang.'); } return result; }
-    catch (e) { if (e instanceof ApiError && e.status === 409) await refresh().catch(() => {}); setError(e instanceof Error ? e.message : 'Không thể lưu dữ liệu.'); throw e; }
-  }, [refresh]);
+    try {
+      const result = await action();
+      try {
+        await refresh();
+        setError(null);
+      } catch {
+        // Background sync notice instead of hard-failing
+      }
+      return result;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) await refresh().catch(() => {});
+      const msg = e instanceof Error ? e.message : 'Không thể lưu dữ liệu.';
+      setError(msg);
+      notify.error('Lỗi thao tác', msg);
+      throw e;
+    }
+  }, [refresh, notify]);
   const login = useCallback(async (email: string, password: string, displayName?: string) => {
     await post(displayName === undefined ? '/auth/login' : '/auth/register', { email, password, ...(displayName === undefined ? {} : { displayName }) });
     session.current = null; reveals.current.clear(); pendingReviews.current.clear(); setLastReview(null); await refresh(); setError(null);
   }, [refresh]);
   const logout = useCallback(async () => { await post('/auth/logout'); refreshSequence.current++; setSnapshot(null); session.current = null; reveals.current.clear(); pendingReviews.current.clear(); setLastReview(null); }, []);
-  const addVocabItem = useCallback((item: Omit<VocabItem, 'id' | 'createdAt' | 'updatedAt'>) => perform(() => post<VocabItem>('/vocabulary', item)), [perform]);
-  const updateVocabItem = useCallback(async (id: string, updates: Partial<VocabItem>) => { await perform(() => api(`/vocabulary/${id}`, { method: 'PATCH', body: JSON.stringify(updates) })); }, [perform]);
-  const deleteVocabItem = useCallback(async (id: string) => { await perform(() => api(`/vocabulary/${id}`, { method: 'DELETE' })); }, [perform]);
-  const addDeck = useCallback((deck: Omit<Deck, 'id' | 'createdAt'>) => perform(() => post<Deck>('/decks', deck)), [perform]);
-  const updateDeck = useCallback(async (id: string, updates: Partial<Deck>) => { await perform(() => api(`/decks/${id}`, { method: 'PATCH', body: JSON.stringify(updates) })); }, [perform]);
-  const deleteDeck = useCallback(async (id: string) => { await perform(() => api(`/decks/${id}`, { method: 'DELETE' })); }, [perform]);
+  const addVocabItem = useCallback(async (item: Omit<VocabItem, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const created = await perform(() => post<VocabItem>('/vocabulary', item));
+    notify.success('Đã thêm thẻ mới!', `Từ "${item.word}" đã được đưa vào kho học FSRS.`);
+    return created;
+  }, [perform, notify]);
+  const updateVocabItem = useCallback(async (id: string, updates: Partial<VocabItem>) => {
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return { ...prev, vocabItems: prev.vocabItems.map(v => v.id === id ? { ...v, ...updates } : v) };
+    });
+    await perform(() => api(`/vocabulary/${id}`, { method: 'PATCH', body: JSON.stringify(updates) }));
+    notify.success('Đã cập nhật từ vựng!', 'Các thay đổi đã được lưu.');
+  }, [perform, notify]);
+  const deleteVocabItem = useCallback(async (id: string) => {
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        vocabItems: prev.vocabItems.filter(v => v.id !== id),
+        cards: prev.cards.filter(c => c.vocabItemId !== id),
+      };
+    });
+    await perform(() => api(`/vocabulary/${id}`, { method: 'DELETE' }));
+    notify.info('Đã xóa từ vựng', 'Từ vựng và các thẻ liên quan đã được gỡ bỏ.');
+  }, [perform, notify]);
+  const addDeck = useCallback(async (deck: Omit<Deck, 'id' | 'createdAt'>) => {
+    const created = await perform(() => post<Deck>('/decks', deck));
+    notify.success('Đã tạo bộ từ mới!', `Bộ từ "${deck.name}" đã được tạo thành công.`);
+    return created;
+  }, [perform, notify]);
+  const updateDeck = useCallback(async (id: string, updates: Partial<Deck>) => {
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return { ...prev, decks: prev.decks.map(d => d.id === id ? { ...d, ...updates } : d) };
+    });
+    await perform(() => api(`/decks/${id}`, { method: 'PATCH', body: JSON.stringify(updates) }));
+    notify.success('Đã cập nhật bộ từ!', 'Thay đổi bộ từ đã được lưu.');
+  }, [perform, notify]);
+  const deleteDeck = useCallback(async (id: string) => {
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return { ...prev, decks: prev.decks.filter(d => d.id !== id) };
+    });
+    await perform(() => api(`/decks/${id}`, { method: 'DELETE' }));
+    notify.info('Đã xóa bộ từ', 'Bộ từ đã được gỡ khỏi thư viện.');
+  }, [perform, notify]);
   const renameTopicGroup = useCallback(async (oldName: string, newName: string) => {
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return { ...prev, decks: prev.decks.map(d => d.topicGroup === oldName ? { ...d, topicGroup: newName } : d) };
+    });
     await perform(() => api(`/decks/groups/${encodeURIComponent(oldName)}`, {
       method: 'PATCH',
       body: JSON.stringify({ newName }),
     }));
-  }, [perform]);
+    notify.success('Đã đổi tên chủ đề!', `Chủ đề đã được cập nhật thành "${newName}".`);
+  }, [perform, notify]);
   const deleteTopicGroup = useCallback(async (name: string, targetGroup?: string) => {
+    const fallback = targetGroup || 'Chung';
+    setSnapshot(prev => {
+      if (!prev) return prev;
+      return { ...prev, decks: prev.decks.map(d => d.topicGroup === name ? { ...d, topicGroup: fallback } : d) };
+    });
     await perform(() => api(`/decks/groups/${encodeURIComponent(name)}${targetGroup ? `?targetGroup=${encodeURIComponent(targetGroup)}` : ''}`, {
       method: 'DELETE',
     }));
-  }, [perform]);
+    notify.info('Đã xóa chủ đề', `Các bộ từ đã được chuyển sang chủ đề "${fallback}".`);
+  }, [perform, notify]);
   const forkPublicDeck = useCallback(async (deckId: string, options?: { targetName?: string; topicGroup?: string }) => {
-    return perform(async () => post<{ deck: Deck; importedCount: number }>(`/decks/public/${deckId}/fork`, options ?? {}));
-  }, [perform]);
+    const result = await perform(async () => post<{ deck: Deck; importedCount: number }>(`/decks/public/${deckId}/fork`, options ?? {}));
+    notify.success('Đã lưu bộ từ về thư viện!', `Đã sao chép ${result.importedCount} từ vào bộ "${result.deck.name}".`);
+    return result;
+  }, [perform, notify]);
   const revealCard = useCallback(async (cardId: string) => {
     if (!session.current) session.current = post<{ id: string }>('/study/sessions', { mode: 'flashcard' }).catch(e => { session.current = null; throw e; });
     const activeSession = await session.current;
@@ -165,15 +234,17 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
 
       await post('/me/avatar', { assetId: intent.id });
       await refresh();
+      notify.success('Đã cập nhật ảnh đại diện!', 'Ảnh mới đã được lưu thành công.');
     });
-  }, [perform, refresh]);
+  }, [perform, refresh, notify]);
 
   const removeAvatar = useCallback(async () => {
     await perform(async () => {
       await api('/me/avatar', { method: 'DELETE' });
       await refresh();
+      notify.info('Đã gỡ ảnh đại diện', 'Đã quay về ảnh mặc định.');
     });
-  }, [perform, refresh]);
+  }, [perform, refresh, notify]);
 
   const uploadVocabImage = useCallback(async (vocabId: string, input: File | string) => {
     return perform(async () => {
@@ -212,15 +283,17 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
       await post(`/media/${intent.id}/upload-direct`, { dataUrl });
       await post(`/media/${intent.id}/attach`, { vocabId });
       await refresh();
+      notify.success('Đã tải ảnh minh họa!', 'Hình ảnh đã được gắn vào thẻ học FSRS.');
     });
-  }, [perform, refresh]);
+  }, [perform, refresh, notify]);
 
   const removeVocabImage = useCallback(async (vocabId: string, mediaId: string) => {
-    return perform(async () => {
+    await perform(async () => {
       await post(`/media/${mediaId}/detach`, { vocabId });
       await refresh();
+      notify.info('Đã gỡ ảnh minh họa', 'Thẻ học đã chuyển về dạng văn bản thuần.');
     });
-  }, [perform, refresh]);
+  }, [perform, refresh, notify]);
   const cards = snapshot?.cards ?? [];
   const computed = useMemo(() => ({ newCards: cards.filter(c => c.state === 'new'), learningCards: cards.filter(c => ['learning', 'relearning'].includes(c.state)), reviewCards: cards.filter(c => c.state === 'review') }), [cards]);
   const overview = snapshot?.overview;

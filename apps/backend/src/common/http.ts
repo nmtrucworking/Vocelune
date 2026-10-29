@@ -9,7 +9,7 @@ export function fail(status: number, code: string, message: string, details?: un
 }
 export const uuid = z.string().uuid();
 export const id = (value: string) => uuid.parse(value);
-export const normalized = (value: string) => value.normalize('NFC').trim().toLocaleLowerCase('en-US');
+export const normalized = (value?: string | null) => (value ?? '').normalize('NFC').trim().toLocaleLowerCase('en-US');
 export const requestKey = (value?: string) => z.string().min(8).max(128).parse(value);
 export function patchFields<T extends object>(parsed: T, body: unknown): T { return Object.fromEntries(Object.entries(parsed).filter(([key]) => Object.hasOwn(body as object, key))) as T; }
 export const pagination = z.object({ cursor: uuid.optional(), limit: z.coerce.number().int().min(1).max(200).default(50) });

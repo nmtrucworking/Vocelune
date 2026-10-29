@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { parse } from 'csv-parse/sync';
 import ExcelJS from 'exceljs';
 import { Database, json } from '../common/db';
-import { fail, uuid } from '../common/http';
+import { fail, uuid, normalized } from '../common/http';
 import { hash } from '../identity/security';
 import { config } from '../common/config';
 import { VocabularyService, vocabSchema, VocabInput } from '../vocabulary/vocabulary.service';
@@ -100,6 +100,8 @@ export class TransferService {
       return tx.importJob.create({ data: { userId, idempotencyKey: key, payloadHash, deckId: input.deckId, policy: input.policy, rows: json(rows) } });
     });
   }
+  private activeJobs = new Set<string>();
+
   async history(userId: string) {
     return this.db.importJob.findMany({ where: { userId }, select: { id: true, status: true, result: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 50 });
   }
@@ -109,70 +111,135 @@ export class TransferService {
     return Buffer.from('\uFEFFrow_number,word,status,error\r\n' + rows.map(row => [row.rowNumber, row.data?.word ?? '', row.status, JSON.stringify(row.error)].map(csvCell).join(',')).join('\r\n'));
   }
   async get(userId: string, jobId: string) {
-    let job = await this.db.importJob.findFirst({ where: { id: jobId, userId } });
+    const job = await this.db.importJob.findFirst({ where: { id: jobId, userId } });
     if (!job) fail(404, 'NOT_FOUND', 'Không tìm thấy lượt nhập.');
-    if (job.status === 'queued' || job.status === 'processing') {
-      try {
-        await this.process(userId, jobId);
-        const updated = await this.db.importJob.findFirst({ where: { id: jobId, userId } });
-        if (updated) job = updated;
-      } catch (err) {
-        process.stderr.write(`Error processing queued import ${jobId}: ${(err as Error).message}\n`);
-      }
+    if ((job.status === 'queued' || job.status === 'processing') && !this.activeJobs.has(jobId)) {
+      setImmediate(() => {
+        void this.process(userId, jobId).catch(err => {
+          process.stderr.write(`Async import process from get error ${jobId}: ${(err as Error).message}\n`);
+        });
+      });
     }
     return job;
   }
   async commit(userId: string, jobId: string) {
-    await this.db.forUser(userId, async tx => {
-      const job = await tx.importJob.findFirst({ where: { id: jobId, userId } });
-      if (!job) fail(404, 'NOT_FOUND', 'Không tìm thấy lượt nhập.');
-      if (job.status === 'preview' || job.status === 'failed') await tx.importJob.update({ where: { id: jobId }, data: { status: 'queued' } });
+    const job = await this.db.forUser(userId, async tx => {
+      const existing = await tx.importJob.findFirst({ where: { id: jobId, userId } });
+      if (!existing) fail(404, 'NOT_FOUND', 'Không tìm thấy lượt nhập.');
+      if (existing.status === 'preview' || existing.status === 'failed') {
+        return tx.importJob.update({ where: { id: jobId }, data: { status: 'queued' } });
+      }
+      return existing;
     });
-    await this.process(userId, jobId);
-    return this.get(userId, jobId);
+    setImmediate(() => {
+      void this.process(userId, jobId).catch(err => {
+        process.stderr.write(`Async import process error ${jobId}: ${(err as Error).message}\n`);
+      });
+    });
+    return job;
   }
   async process(userId: string, jobId: string) {
-    let done = false;
-    while (!done) {
-      done = await this.db.forUser(userId, async tx => {
-        const job = await tx.importJob.findFirst({ where: { id: jobId, userId } });
-        if (!job || !['queued', 'processing'].includes(job.status)) return true;
-        await this.vocabulary.requireDeck(tx, userId, job.deckId);
-        const rows = job.rows as unknown as ImportRow[];
-        const pending = rows.filter(r => r.status === 'pending').slice(0, 50);
-        for (const row of pending) {
-          if (!row.data) {
-            row.status = 'failed';
-            row.error = 'missing_data';
-            continue;
+    if (this.activeJobs.has(jobId)) return;
+    this.activeJobs.add(jobId);
+    try {
+      let done = false;
+      while (!done) {
+        done = await this.db.forUser(userId, async tx => {
+          const job = await tx.importJob.findFirst({ where: { id: jobId, userId } });
+          if (!job || !['queued', 'processing'].includes(job.status)) return true;
+          await this.vocabulary.requireDeck(tx, userId, job.deckId);
+          const rows = job.rows as unknown as ImportRow[];
+          // Process in smaller batches of 15 to stay well within transaction timeouts on remote databases
+          const pending = rows.filter(r => r.status === 'pending').slice(0, 15);
+          if (pending.length === 0) {
+            const counts = {
+              created: rows.filter(r => r.status === 'created').length,
+              updated: rows.filter(r => r.status === 'updated').length,
+              skipped: rows.filter(r => r.status === 'skipped').length,
+              failed: rows.filter(r => r.status === 'failed').length,
+            };
+            await tx.importJob.update({
+              where: { id: jobId },
+              data: {
+                status: 'completed',
+                result: counts,
+                completedAt: new Date(),
+              },
+            });
+            return true;
           }
-          const data = row.data;
-          try {
-            // Recheck duplicates under the user lock; a preview is not a reservation.
-            const existing = await tx.vocabItem.findFirst({ where: { userId, deletedAt: null, senseKey: this.vocabulary.senseKey(data), lexeme: { normalized: data.word.normalize('NFC').trim().toLowerCase(), partOfSpeech: data.partOfSpeech } } });
-            if (existing && job.policy !== 'create_new') {
-              row.resultId = existing.id;
-              if (job.policy === 'skip') row.status = 'skipped';
-              else {
-                // An exact sense duplicate can update user annotations without merging unrelated senses.
-                await tx.vocabItem.update({ where: { id: existing.id }, data: { exampleEn: data.exampleEn || existing.exampleEn, exampleVi: data.exampleVi || existing.exampleVi, notes: data.notes || existing.notes, tags: [...new Set([...existing.tags, ...data.tags])] } });
-                await tx.deckItem.upsert({ where: { deckId_vocabItemId: { deckId: job.deckId, vocabItemId: existing.id } }, create: { deckId: job.deckId, vocabItemId: existing.id }, update: {} });
-                row.status = 'updated';
-              }
-            } else {
-              const item = await this.vocabulary.createInTx(tx, userId, data, job.policy === 'create_new');
-              row.resultId = item.id; row.status = 'created';
+
+          for (const row of pending) {
+            if (!row.data) {
+              row.status = 'failed';
+              row.error = 'missing_data';
+              continue;
             }
-          } catch (rowErr) {
-            row.status = 'failed';
-            row.error = (rowErr as Error).message || 'row_processing_error';
+            const data = { ...row.data, deckId: row.data.deckId || job.deckId };
+            try {
+              // Recheck duplicates under the user lock; a preview is not a reservation.
+              const senseKey = this.vocabulary.senseKey(data);
+              const normalizedWord = normalized(data.word);
+              const existing = await tx.vocabItem.findFirst({
+                where: {
+                  userId,
+                  deletedAt: null,
+                  senseKey,
+                  lexeme: { normalized: normalizedWord, partOfSpeech: data.partOfSpeech },
+                },
+              });
+              if (existing && job.policy !== 'create_new') {
+                row.resultId = existing.id;
+                if (job.policy === 'skip') row.status = 'skipped';
+                else {
+                  // An exact sense duplicate can update user annotations without merging unrelated senses.
+                  await tx.vocabItem.update({
+                    where: { id: existing.id },
+                    data: {
+                      exampleEn: data.exampleEn || existing.exampleEn,
+                      exampleVi: data.exampleVi || existing.exampleVi,
+                      notes: data.notes || existing.notes,
+                      tags: [...new Set([...existing.tags, ...(data.tags ?? [])])],
+                    },
+                  });
+                  await tx.deckItem.upsert({
+                    where: { deckId_vocabItemId: { deckId: job.deckId, vocabItemId: existing.id } },
+                    create: { deckId: job.deckId, vocabItemId: existing.id },
+                    update: {},
+                  });
+                  row.status = 'updated';
+                }
+              } else {
+                const item = await this.vocabulary.createInTx(tx, userId, data, job.policy === 'create_new');
+                row.resultId = item.id;
+                row.status = 'created';
+              }
+            } catch (rowErr) {
+              row.status = 'failed';
+              row.error = (rowErr as Error).message || 'row_processing_error';
+            }
           }
-        }
-        const finished = !rows.some(r => r.status === 'pending');
-        const counts = { created: rows.filter(r => r.status === 'created').length, updated: rows.filter(r => r.status === 'updated').length, skipped: rows.filter(r => r.status === 'skipped').length, failed: rows.filter(r => r.status === 'failed').length };
-        await tx.importJob.update({ where: { id: jobId }, data: { rows: json(rows), result: counts, status: finished ? 'completed' : 'processing', completedAt: finished ? new Date() : null } });
-        return finished;
-      });
+          const finished = !rows.some(r => r.status === 'pending');
+          const counts = {
+            created: rows.filter(r => r.status === 'created').length,
+            updated: rows.filter(r => r.status === 'updated').length,
+            skipped: rows.filter(r => r.status === 'skipped').length,
+            failed: rows.filter(r => r.status === 'failed').length,
+          };
+          await tx.importJob.update({
+            where: { id: jobId },
+            data: {
+              rows: json(rows),
+              result: counts,
+              status: finished ? 'completed' : 'processing',
+              completedAt: finished ? new Date() : null,
+            },
+          });
+          return finished;
+        }, { timeout: 60000 });
+      }
+    } finally {
+      this.activeJobs.delete(jobId);
     }
   }
   async template(format: string) {

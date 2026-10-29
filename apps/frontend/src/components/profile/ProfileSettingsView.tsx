@@ -16,8 +16,12 @@ import {
   Mail,
   Clock,
   Send,
+  Bell,
+  VolumeX,
+  Sparkles,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
+import { useNotification } from '@/context/NotificationContext';
 import { Dialect } from '@/types';
 import { DictionaryProvider, useDictionaryProviders } from '@/lib/dictionary';
 import { DictionarySourceSelect } from '../dictionary/DictionarySourceSelect';
@@ -27,6 +31,7 @@ import { api } from '@/lib/api';
 
 export function ProfileSettingsView() {
   const { user, settings, updateSettings, uploadAvatar, removeAvatar, logout } = useVocelune();
+  const { notify, soundEnabled, toggleSound, browserPushSupported, browserPushPermission, requestBrowserPermission } = useNotification();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
@@ -54,14 +59,11 @@ export function ProfileSettingsView() {
 
   const handleTestReminder = async () => {
     setIsTestingReminder(true);
-    setTestNotificationMsg(null);
     try {
       const res = await api<{ ok: boolean; subject: string }>('/notifications/test-reminder', { method: 'POST' });
-      setTestNotificationMsg(`Đã tạo và đưa email vào hàng đợi gửi: "${res.subject}"`);
-      setTimeout(() => setTestNotificationMsg(null), 5000);
+      notify.success('Đã xếp hàng email nhắc nhở!', `Tiêu đề: "${res.subject}"`);
     } catch (err: any) {
-      setTestNotificationMsg(`Không thể gửi email thử nghiệm: ${err.message || 'Lỗi kết nối'}`);
-      setTimeout(() => setTestNotificationMsg(null), 5000);
+      notify.error('Không thể gửi email thử', err?.message || 'Lỗi kết nối máy chủ.');
     } finally {
       setIsTestingReminder(false);
     }
@@ -69,14 +71,11 @@ export function ProfileSettingsView() {
 
   const handleTestSummary = async () => {
     setIsTestingSummary(true);
-    setTestNotificationMsg(null);
     try {
       const res = await api<{ ok: boolean; subject: string }>('/notifications/test-summary', { method: 'POST' });
-      setTestNotificationMsg(`Đã tạo và đưa email vào hàng đợi gửi: "${res.subject}"`);
-      setTimeout(() => setTestNotificationMsg(null), 5000);
+      notify.success('Đã xếp hàng email tổng kết!', `Tiêu đề: "${res.subject}"`);
     } catch (err: any) {
-      setTestNotificationMsg(`Không thể gửi email thử nghiệm: ${err.message || 'Lỗi kết nối'}`);
-      setTimeout(() => setTestNotificationMsg(null), 5000);
+      notify.error('Không thể gửi email thử', err?.message || 'Lỗi kết nối máy chủ.');
     } finally {
       setIsTestingSummary(false);
     }
@@ -472,13 +471,87 @@ export function ProfileSettingsView() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
 
-            {testNotificationMsg && (
-              <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 rounded-control text-xs flex items-center gap-2">
-                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>{testNotificationMsg}</span>
+        {/* In-App & Browser Push Notification Settings Card */}
+        <div className="bg-surface-base border border-slate-200/90 rounded-card shadow-card p-6 space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <Bell className="w-4 h-4 text-brand-primary" />
+              <h3 className="text-sm font-semibold text-brand-ink">Thông báo đẩy & Âm thanh trực quan</h3>
+            </div>
+            <span className="text-[11px] font-semibold text-brand-primary bg-brand-primarySoft px-2.5 py-0.5 rounded-full flex items-center gap-1">
+              <Sparkles className="w-3 h-3" /> Web Audio & Push
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            {/* Audio Feedback Toggle */}
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-brand-ink">🔔 Hiệu ứng âm thanh thông báo (Visual Audio Chime)</span>
+                  <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${soundEnabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
+                    {soundEnabled ? 'Đang bật' : 'Đã tắt'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-text-secondary leading-relaxed">
+                  Phát âm thanh tổng hợp đa tầng (Web Audio API) khi tạo thẻ, tạo topic, cập nhật dữ liệu, hoàn thành import hoặc gặp lỗi.
+                </p>
               </div>
-            )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => notify.success('Âm thanh thử nghiệm', 'Đây là chuông âm thanh trực quan thông báo thành công.')}
+                  className="px-2.5 py-1 text-[11px] font-medium border border-slate-200 bg-white rounded-control hover:bg-slate-50 text-slate-700"
+                >
+                  Nghe thử
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleSound}
+                  className={`px-3 py-1 text-xs font-semibold rounded-control transition-colors ${soundEnabled ? 'bg-brand-primary text-white' : 'bg-slate-200 text-slate-700'}`}
+                >
+                  {soundEnabled ? 'Bật' : 'Tắt'}
+                </button>
+              </div>
+            </div>
+
+            {/* Browser Push Notification Permission */}
+            <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-brand-ink">🌐 Thông báo đẩy trình duyệt (Browser Push Notification)</span>
+                  <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${browserPushPermission === 'granted' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                    {browserPushPermission === 'granted' ? 'Đã cấp quyền' : browserPushPermission === 'denied' ? 'Bị chặn bởi trình duyệt' : 'Chưa kích hoạt'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-text-secondary leading-relaxed">
+                  Hiển thị thông báo đẩy ở góc màn hình hệ điều hành ngay cả khi bạn đang duyệt tab khác trong lúc xử lý import hoặc ôn tập.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    notify.info('Vocelune Push Notification', 'Thông báo đẩy của bạn đang hoạt động bình thường!', { browserPush: true });
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-medium border border-slate-200 bg-white rounded-control hover:bg-slate-50 text-slate-700"
+                >
+                  Gửi thử
+                </button>
+                {browserPushSupported && browserPushPermission !== 'granted' && (
+                  <button
+                    type="button"
+                    onClick={() => void requestBrowserPermission()}
+                    className="px-3 py-1 text-xs font-semibold rounded-control bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                  >
+                    Bật thông báo
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

@@ -14,6 +14,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
+import { useNotification } from '@/context/NotificationContext';
 import { Deck } from '@/types';
 import { api } from '@/lib/api';
 import { PublicDeckPreviewModal } from './PublicDeckPreviewModal';
@@ -26,6 +27,7 @@ interface PublicDeckHubProps {
 
 export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
   const { forkPublicDeck } = useVocelune();
+  const { notify } = useNotification();
   const [publicDecks, setPublicDecks] = useState<Deck[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +119,7 @@ export function PublicDeckHub({ onForkSuccess }: PublicDeckHubProps) {
         onForkSuccess?.();
       }, 1000);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Không thể lưu bộ từ.');
+      notify.error('Không thể lưu bộ từ', err instanceof Error ? err.message : 'Không thể lưu bộ từ.');
     } finally {
       setForkingMap((prev) => ({ ...prev, [deck.id]: false }));
     }

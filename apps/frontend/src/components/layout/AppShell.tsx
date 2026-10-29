@@ -72,7 +72,6 @@ export function AppShell({ children, pageTitle }: AppShellProps) {
         />
 
         <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">
-          {error && <div role="alert" className="mb-4 flex justify-between bg-rose-50 text-rose-700 border border-rose-200 rounded-lg p-3 text-sm">{error}<button onClick={clearError} aria-label="Đóng thông báo">×</button></div>}
           {children}
         </main>
       </div>

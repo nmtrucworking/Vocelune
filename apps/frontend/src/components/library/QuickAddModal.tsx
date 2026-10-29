@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Search, Sparkles, Volume2, Check, Info, Wand2, Loader2 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
+import { useNotification } from '@/context/NotificationContext';
 import { PartOfSpeech, CEFRLevel, Dialect, VocabItem } from '@/types';
 import { api, post } from '@/lib/api';
 import { DictionaryLookup, DictionaryProvider, useDictionaryProviders, translateText, convertWordToIpa } from '@/lib/dictionary';
@@ -15,6 +16,7 @@ import { LexicalMetadataView } from '../dictionary/LexicalMetadataView';
 interface QuickAddModalProps { isOpen: boolean; onClose: () => void }
 export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
   const { decks, addVocabItem, settings, refresh } = useVocelune();
+  const { notify } = useNotification();
   const { providers, error: providerError } = useDictionaryProviders(isOpen);
   const [word, setWord] = useState('');
   const [pos, setPos] = useState<PartOfSpeech>('noun');
@@ -27,6 +29,7 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
   const [cefr, setCefr] = useState<CEFRLevel>('unknown');
   const [deckId, setDeckId] = useState(decks[0]?.id || '');
   const [tags, setTags] = useState('essential'), [notes, setNotes] = useState('');
+  const [keepOpen, setKeepOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false), [saving, setSaving] = useState(false);
   const [isConvertingIpa, setIsConvertingIpa] = useState(false);
   const [meaningAlternatives, setMeaningAlternatives] = useState<string[]>([]);
@@ -192,13 +195,29 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
       const common = { meaningVi: meaningVi.trim(), deckId: deckId || decks[0]?.id, tags: tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean), notes: notes.trim(), cefr, cefrSource: cefr === 'unknown' ? 'unknown' as const : 'manual' as const };
       if (includeProviderContent && selected && result) {
         await post<VocabItem>('/dictionary/vocabulary', { ...result.query, provider: selected.provider || result.provider, strategy: source === 'auto' ? 'auto_enrich' : 'manual', providerEntryRef: selected.entryRef, providerSenseRef: selected.providerSenseRef, ...common, manualFields: ownedFields });
-        await refresh().catch(() => {});
+        void refresh().catch(() => {});
       } else {
         await addVocabItem({ word: word.trim(), partOfSpeech: pos, dialect, ...ownedFields, ...common, deckId: common.deckId || '' });
       }
-      invalidateLookup(); setWord(''); setMeaningVi(''); setDefinitionEn(''); setExampleEn(''); setExampleVi(''); setPhonetic(''); setCefr('unknown'); setNotes(''); onClose();
-    } catch (error) { setLookupNoticeType('warning'); setLookupMessage(error instanceof Error ? error.message : 'Không thể lưu từ.'); }
-    finally { setSaving(false); }
+      notify.success('Đã thêm thẻ mới!', `Từ "${word}" (${pos}) đã được đưa vào kho học FSRS.`);
+      invalidateLookup();
+      setWord('');
+      setMeaningVi('');
+      setDefinitionEn('');
+      setExampleEn('');
+      setExampleVi('');
+      setPhonetic('');
+      setCefr('unknown');
+      setNotes('');
+      if (!keepOpen) {
+        onClose();
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Không thể lưu từ.';
+      notify.error('Lỗi thêm từ', msg);
+    } finally {
+      setSaving(false);
+    }
   };
   if (!isOpen) return null;
 
@@ -557,22 +576,33 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
           </div>
 
           {/* Action Buttons */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-text-secondary hover:text-brand-ink bg-slate-100 hover:bg-slate-200 rounded-control transition-colors"
-            >
-              Hủy bỏ
-            </button>
-            <button
-              type="submit"
-              disabled={!word.trim() || !meaningVi.trim() || saving || isSearching}
-              className="px-5 py-2 text-xs font-semibold text-white bg-brand-primary hover:bg-brand-primaryHover rounded-control shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
-            >
-              <Check className="w-4 h-4" />
-              <span>{saving ? 'Đang lưu...' : 'Lưu & Tạo thẻ FSRS'}</span>
-            </button>
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2.5">
+            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={keepOpen}
+                onChange={(e) => setKeepOpen(e.target.checked)}
+                className="rounded border-slate-300 text-brand-primary focus:ring-brand-primary"
+              />
+              <span>Tiếp tục thêm thẻ khác</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-semibold text-text-secondary hover:text-brand-ink bg-slate-100 hover:bg-slate-200 rounded-control transition-colors"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="submit"
+                disabled={!word.trim() || !meaningVi.trim() || saving || isSearching}
+                className="px-5 py-2 text-xs font-semibold text-white bg-brand-primary hover:bg-brand-primaryHover rounded-control shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                <span>{saving ? 'Đang lưu...' : 'Lưu & Tạo thẻ FSRS'}</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>

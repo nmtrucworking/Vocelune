@@ -24,6 +24,7 @@ import {
 import { PublicNavbar } from '@/components/public/PublicNavbar';
 import { PublicFooter } from '@/components/public/PublicFooter';
 import { useVocelune } from '@/context/VoceluneContext';
+import { useNotification } from '@/context/NotificationContext';
 import { api } from '@/lib/api';
 import { Deck, VocabItem, PublicDeckPreview } from '@/types';
 import { INITIAL_DECKS, INITIAL_VOCAB } from '@/lib/seed-data';
@@ -244,6 +245,7 @@ const SAMPLE_PREVIEW_ITEMS: Record<string, Partial<VocabItem>[]> = {
 export default function ExplorePage() {
   const router = useRouter();
   const { user, forkPublicDeck } = useVocelune();
+  const { notify } = useNotification();
 
   const [decks, setDecks] = useState<Deck[]>(EXTRA_CURATED_DECKS);
   const [loading, setLoading] = useState(false);
@@ -356,7 +358,7 @@ export default function ExplorePage() {
         router.push('/study');
       }, 1200);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Không thể lưu bộ từ vào thư viện.');
+      notify.error('Không thể lưu bộ từ', err instanceof Error ? err.message : 'Không thể lưu bộ từ vào thư viện.');
     } finally {
       setForkingDeckId(null);
     }
