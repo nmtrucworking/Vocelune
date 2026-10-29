@@ -778,6 +778,20 @@ export function StudyConsole() {
                     </h3>
                   </div>
 
+                  {/* Illustrative Image (if attached) */}
+                  {currentVocab.imageUrl && (
+                    <div className="flex justify-center my-2">
+                      <div className="rounded-xl overflow-hidden border border-slate-200/90 bg-slate-50 max-h-48 flex items-center justify-center p-1 shadow-xs">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={currentVocab.imageUrl}
+                          alt={currentVocab.word}
+                          className="max-h-44 w-auto object-contain rounded-lg"
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {/* English Definition */}
                   {currentVocab.definitionEn && (
                     <div className="space-y-0.5">

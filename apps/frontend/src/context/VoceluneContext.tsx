@@ -22,8 +22,10 @@ interface VoceluneContextType {
   revealCard: (cardId: string) => Promise<void>; gradeCard: (cardId: string, rating: FSRSRating, durationMs?: number) => Promise<void>;
   undoLastReview: () => Promise<boolean>; toggleSuspendCard: (cardId: string) => Promise<void>;
   updateSettings: (updates: Partial<UserSettings>) => Promise<void>;
-  uploadAvatar: (file: File) => Promise<void>;
+  uploadAvatar: (input: File | string) => Promise<void>;
   removeAvatar: () => Promise<void>;
+  uploadVocabImage: (vocabId: string, input: File | string) => Promise<void>;
+  removeVocabImage: (vocabId: string, mediaId: string) => Promise<void>;
   dueCards: Card[]; newCards: Card[]; learningCards: Card[]; reviewCards: Card[];
   streak: number; observedRetention: number | null; retentionSampleSize: number; weakWords: { vocab: VocabItem; lapses: number; reps: number }[];
   todayReviewsCount: number; activityHeatmap: DailyActivity[];
@@ -117,38 +119,114 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
     await perform(() => api(`/cards/${cardId}`, { method: 'PATCH', body: JSON.stringify({ suspended: !card.suspended, expectedCardVersion: card.version }) }));
   }, [snapshot?.cards, perform]);
   const updateSettings = useCallback(async (updates: Partial<UserSettings>) => { await perform(() => api('/me/settings', { method: 'PATCH', body: JSON.stringify(updates) })); }, [perform]);
-  const uploadAvatar = useCallback(async (file: File) => {
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      throw new Error('Chỉ hỗ trợ ảnh PNG, JPEG hoặc WebP.');
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      throw new Error('Kích thước ảnh tối đa là 5MB.');
-    }
+  const uploadAvatar = useCallback(async (input: File | string) => {
     return perform(async () => {
-      const intent = await post<{ id: string; uploadUrl: string; headers: Record<string, string> }>('/media/upload-intents', {
+      let dataUrl: string;
+      let mime: string = 'image/jpeg';
+      let sizeBytes: number;
+
+      if (typeof input === 'string') {
+        dataUrl = input;
+        const match = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,/);
+        if (match) mime = match[1];
+        sizeBytes = Math.round((dataUrl.length * 3) / 4);
+      } else {
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(input.type)) {
+          throw new Error('Chỉ hỗ trợ ảnh PNG, JPEG hoặc WebP.');
+        }
+        if (input.size > 5 * 1024 * 1024) {
+          throw new Error('Kích thước ảnh tối đa là 5MB.');
+        }
+        mime = input.type;
+        sizeBytes = input.size;
+        dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(input);
+        });
+      }
+
+      const intent = await post<{ id: string; uploadUrl: string }>('/media/upload-intents', {
         purpose: 'avatar',
-        mime: file.type,
-        sizeBytes: file.size,
+        mime: mime === 'image/webp' ? 'image/webp' : mime === 'image/png' ? 'image/png' : 'image/jpeg',
+        sizeBytes: Math.min(sizeBytes, 5 * 1024 * 1024),
       });
-      const uploadRes = await fetch(intent.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      });
-      if (!uploadRes.ok) throw new Error('Tải ảnh lên kho lưu trữ R2 không thành công.');
-      await post(`/media/${intent.id}/complete`);
+
+      try {
+        await post(`/media/${intent.id}/upload-direct`, { dataUrl });
+      } catch {
+        if (typeof input !== 'string') {
+          const uploadRes = await fetch(intent.uploadUrl, { method: 'PUT', headers: { 'Content-Type': mime }, body: input });
+          if (!uploadRes.ok) throw new Error('Tải ảnh lên kho lưu trữ R2 không thành công.');
+          await post(`/media/${intent.id}/complete`);
+        }
+      }
+
       await post('/me/avatar', { assetId: intent.id });
+      await refresh();
     });
-  }, [perform]);
+  }, [perform, refresh]);
+
   const removeAvatar = useCallback(async () => {
-    await perform(() => api('/me/avatar', { method: 'DELETE' }));
-  }, [perform]);
+    await perform(async () => {
+      await api('/me/avatar', { method: 'DELETE' });
+      await refresh();
+    });
+  }, [perform, refresh]);
+
+  const uploadVocabImage = useCallback(async (vocabId: string, input: File | string) => {
+    return perform(async () => {
+      let dataUrl: string;
+      let mime: string = 'image/jpeg';
+      let sizeBytes: number;
+
+      if (typeof input === 'string') {
+        dataUrl = input;
+        const match = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,/);
+        if (match) mime = match[1];
+        sizeBytes = Math.round((dataUrl.length * 3) / 4);
+      } else {
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(input.type)) {
+          throw new Error('Chỉ hỗ trợ ảnh PNG, JPEG hoặc WebP.');
+        }
+        if (input.size > 5 * 1024 * 1024) {
+          throw new Error('Kích thước ảnh tối đa là 5MB.');
+        }
+        mime = input.type;
+        sizeBytes = input.size;
+        dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(input);
+        });
+      }
+
+      const intent = await post<{ id: string; uploadUrl: string }>('/media/upload-intents', {
+        purpose: 'flashcard',
+        mime: mime === 'image/webp' ? 'image/webp' : mime === 'image/png' ? 'image/png' : 'image/jpeg',
+        sizeBytes: Math.min(sizeBytes, 5 * 1024 * 1024),
+      });
+
+      await post(`/media/${intent.id}/upload-direct`, { dataUrl });
+      await post(`/media/${intent.id}/attach`, { vocabId });
+      await refresh();
+    });
+  }, [perform, refresh]);
+
+  const removeVocabImage = useCallback(async (vocabId: string, mediaId: string) => {
+    return perform(async () => {
+      await post(`/media/${mediaId}/detach`, { vocabId });
+      await refresh();
+    });
+  }, [perform, refresh]);
   const cards = snapshot?.cards ?? [];
   const computed = useMemo(() => ({ newCards: cards.filter(c => c.state === 'new'), learningCards: cards.filter(c => ['learning', 'relearning'].includes(c.state)), reviewCards: cards.filter(c => c.state === 'review') }), [cards]);
   const overview = snapshot?.overview;
   return <VoceluneContext.Provider value={{ analytics: overview ?? null, user: snapshot?.user ?? null, error, clearError: () => setError(null), refresh, login, logout,
     vocabItems: snapshot?.vocabItems ?? [], decks: snapshot?.decks ?? [], cards, reviewLogs: snapshot?.reviewLogs ?? [], testAttempts: snapshot?.testAttempts ?? [], settings: snapshot?.settings ?? INITIAL_SETTINGS, isLoaded, canUndo: !!lastReview,
-    addVocabItem, updateVocabItem, deleteVocabItem, addDeck, updateDeck, deleteDeck, renameTopicGroup, deleteTopicGroup, forkPublicDeck, revealCard, gradeCard, undoLastReview, toggleSuspendCard, updateSettings, uploadAvatar, removeAvatar,
+    addVocabItem, updateVocabItem, deleteVocabItem, addDeck, updateDeck, deleteDeck, renameTopicGroup, deleteTopicGroup, forkPublicDeck, revealCard, gradeCard, undoLastReview, toggleSuspendCard, updateSettings, uploadAvatar, removeAvatar, uploadVocabImage, removeVocabImage,
     dueCards: snapshot?.dueCards ?? [], ...computed, streak: overview?.streak ?? 0, observedRetention: overview?.observedRetention ?? null, retentionSampleSize: overview?.sampleSize ?? 0,
     weakWords: overview?.weakWords ?? [], todayReviewsCount: overview?.todayReviewsCount ?? 0, activityHeatmap: overview?.activityHeatmap.slice(-42) ?? [],
   }}>{children}</VoceluneContext.Provider>;

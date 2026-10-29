@@ -7,7 +7,9 @@ const tokens = (value: string) => new Set(domainKey(value).split(' ').filter(t =
 const key = (candidate: DictionaryCandidate, sense: DictionarySense) => `${normalizeWord(candidate.lemma)}:${candidate.partOfSpeech}:${domainKey(sense.definition.value ?? '')}:${(sense.domains ?? []).map(domainKey).sort().join(',')}`;
 
 export function senseValues(sense: DictionarySense, query: DictionaryQuery): Partial<Record<PersistField, unknown>> {
-  const pronunciation = sense.pronunciations.find(p => p.dialect === query.dialect && p.ipa) ?? sense.pronunciations.find(p => p.dialect === 'unknown' && p.ipa);
+  const pronunciation = sense.pronunciations.find(p => p.dialect === query.dialect && p.ipa)
+    ?? sense.pronunciations.find(p => p.dialect === 'unknown' && p.ipa)
+    ?? sense.pronunciations.find(p => Boolean(p.ipa));
   return { definitionEn: sense.definition.value, exampleEn: sense.examples.items[0], phonetic: pronunciation?.ipa,
     domains: sense.domains, registers: sense.registers, synonyms: sense.synonyms, antonyms: sense.antonyms,
     collocations: sense.collocations, wordForms: sense.wordForms, etymology: sense.etymology, frequency: sense.frequency,

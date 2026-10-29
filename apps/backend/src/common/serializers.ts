@@ -1,7 +1,18 @@
 import { Card, Deck, ReviewLog, VocabItem, DeckItem, UserSettings } from '@prisma/client';
-export function vocabDto(v: VocabItem & { decks: DeckItem[] }) {
-  const { userId, lexemeId, deletedAt, senseKey, sourceKind, provenance, decks, ...fields } = v;
-  return { ...fields, deckId: decks[0]?.deckId || '', deckIds: decks.map(d => d.deckId), senseKey, sourceKind, provenance };
+export function vocabDto(v: VocabItem & { decks: DeckItem[]; media?: { mediaId: string }[] }) {
+  const { userId, lexemeId, deletedAt, senseKey, sourceKind, provenance, decks, media, ...fields } = v as any;
+  const mediaId = media?.[0]?.mediaId || null;
+  const deckList: DeckItem[] = decks || [];
+  return {
+    ...fields,
+    deckId: deckList[0]?.deckId || '',
+    deckIds: deckList.map(d => d.deckId),
+    senseKey,
+    sourceKind,
+    provenance,
+    mediaId,
+    imageUrl: mediaId ? `/api/v1/media/${mediaId}/content` : null,
+  };
 }
 export function deckDto(d: Deck & { _count?: { items: number } }) {
   const { userId, normalizedName, deletedAt, _count, ...fields } = d;

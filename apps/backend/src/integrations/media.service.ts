@@ -104,6 +104,41 @@ export class MediaService {
       return tx.vocabMedia.upsert({ where: { vocabItemId_mediaId: { vocabItemId: vocabId, mediaId: assetId } }, create: { vocabItemId: vocabId, mediaId: assetId }, update: {} });
     });
   }
+  async detach(userId: string, assetId: string, vocabId: string) {
+    return this.db.forUser(userId, async tx => {
+      await tx.vocabMedia.deleteMany({ where: { vocabItemId: vocabId, mediaId: assetId } });
+      return { ok: true };
+    });
+  }
+  async uploadDirect(userId: string, assetId: string, dataUrl: string) {
+    const client = this.storage();
+    const match = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+    if (!match) fail(422, 'INVALID_DATA_URL', 'Định dạng ảnh base64 không hợp lệ.');
+    const mime = match[1] === 'image/webp' ? 'image/webp' : match[1] === 'image/png' ? 'image/png' : 'image/jpeg';
+    const buffer = Buffer.from(match[2], 'base64');
+    if (buffer.length > 5 * 1024 * 1024) fail(422, 'FILE_TOO_LARGE', 'Ảnh vượt quá kích thước 5MB.');
+
+    return this.db.forUser(userId, async tx => {
+      const asset = await tx.mediaAsset.findFirst({ where: { id: assetId, userId, deletedAt: null } });
+      if (!asset) fail(404, 'NOT_FOUND', 'Không tìm thấy phiên tải ảnh.');
+      if (asset.expiresAt <= new Date()) fail(409, 'UPLOAD_EXPIRED', 'Phiên tải ảnh đã hết hạn.');
+
+      const readyKey = `${userId}/ready/${asset.id}`;
+      await client.send(new PutObjectCommand({
+        Bucket: config.R2_BUCKET,
+        Key: readyKey,
+        Body: buffer,
+        ContentType: mime,
+      }));
+
+      await tx.mediaAsset.update({
+        where: { id: asset.id },
+        data: { objectKey: readyKey, status: 'ready', mime, sizeBytes: buffer.length }
+      });
+
+      return { id: asset.id, status: 'ready' };
+    });
+  }
   async cleanup() {
     if (!this.client) return;
     const expired = await this.db.mediaAsset.findMany({ where: { status: 'pending', expiresAt: { lt: new Date(Date.now() - 3600000) } }, take: 100 });

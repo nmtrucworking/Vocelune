@@ -63,7 +63,7 @@ export class AnalyticsService {
     const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, include: { settings: true, avatarAsset: true } });
     const hasAvatar = !!(user.avatarAsset && user.avatarAsset.status === 'ready' && !user.avatarAsset.deletedAt);
     const [vocabulary, decks, cards, reviewLogs, attempts, overview, queue] = await Promise.all([
-      this.db.vocabItem.findMany({ where: { userId, deletedAt: null }, include: { decks: true }, orderBy: { createdAt: 'desc' } }),
+      this.db.vocabItem.findMany({ where: { userId, deletedAt: null }, include: { decks: true, media: true }, orderBy: { createdAt: 'desc' } }),
       this.db.deck.findMany({ where: { userId, deletedAt: null }, orderBy: { createdAt: 'asc' } }),
       this.db.card.findMany({ where: { userId, deletedAt: null, vocabItem: { deletedAt: null } } }),
       this.db.reviewLog.findMany({ where: { userId }, orderBy: { reviewedAt: 'desc' }, take: 10000 }),

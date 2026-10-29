@@ -169,7 +169,7 @@ export class TransferService {
   async export(userId: string, format: string) {
     const data = await this.db.$transaction(async tx => {
       const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { email: true, displayName: true, createdAt: true, settings: true } });
-      const vocabulary = await tx.vocabItem.findMany({ where: { userId, deletedAt: null }, include: { decks: true } });
+      const vocabulary = await tx.vocabItem.findMany({ where: { userId, deletedAt: null }, include: { decks: true, media: true } });
       const decks = await tx.deck.findMany({ where: { userId, deletedAt: null } });
       const cards = await tx.card.findMany({ where: { userId } });
       const reviews = await tx.reviewLog.findMany({ where: { userId } });

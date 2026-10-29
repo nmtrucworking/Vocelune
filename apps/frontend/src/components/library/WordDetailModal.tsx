@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Volume2, Trash2, Check, Sparkles, Folder, BookOpen, Plus } from 'lucide-react';
+import { X, Volume2, Trash2, Check, Sparkles, Folder, BookOpen, Plus, Image as ImageIcon, Crop, Loader2 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, PartOfSpeech, CEFRLevel, Deck } from '@/types';
 import { speakWord } from '@/lib/speech';
@@ -10,6 +10,7 @@ import { translateText } from '@/lib/dictionary';
 import { DictionaryAttribution } from '../dictionary/DictionaryAttribution';
 import { AudioButton } from '../common/AudioButton';
 import { LexicalMetadataView } from '../dictionary/LexicalMetadataView';
+import { ImageCropModal } from '../common/ImageCropModal';
 
 interface WordDetailModalProps {
   vocab: VocabItem | null;
@@ -18,7 +19,7 @@ interface WordDetailModalProps {
 }
 
 export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps) {
-  const { updateVocabItem, deleteVocabItem, addDeck, decks, cards, settings } = useVocelune();
+  const { updateVocabItem, deleteVocabItem, addDeck, decks, cards, settings, uploadVocabImage, removeVocabImage } = useVocelune();
 
   const [isEditing, setIsEditing] = useState(false);
   const [word, setWord] = useState(vocab?.word || '');
@@ -36,6 +37,55 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
   const [newDeckName, setNewDeckName] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Vocab Image & Crop state
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [isCropOpen, setIsCropOpen] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setImageError('Chỉ hỗ trợ ảnh PNG, JPEG hoặc WebP.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropSrc(reader.result as string);
+      setIsCropOpen(true);
+    };
+    reader.readAsDataURL(file);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  const handleCropComplete = async (dataUrl: string) => {
+    if (!vocab) return;
+    setImageError(null);
+    setIsUploadingImage(true);
+    try {
+      await uploadVocabImage(vocab.id, dataUrl);
+    } catch (err: any) {
+      setImageError(err?.message || 'Không thể tải ảnh minh họa lên.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    if (!vocab || !vocab.mediaId) return;
+    setImageError(null);
+    setIsUploadingImage(true);
+    try {
+      await removeVocabImage(vocab.id, vocab.mediaId);
+    } catch (err: any) {
+      setImageError(err?.message || 'Không thể gỡ ảnh.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   // Group existing decks by topic group
   const decksByTopic = useMemo(() => {
@@ -444,6 +494,86 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
               </div>
             </div>
 
+            {/* Vocab Illustrative Image */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5 text-brand-primary" />
+                  <span>Ảnh minh họa</span>
+                </span>
+                <input
+                  type="file"
+                  ref={imageInputRef}
+                  onChange={handleImageFileChange}
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  disabled={isUploadingImage}
+                  onClick={() => imageInputRef.current?.click()}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-brand-primary hover:underline disabled:opacity-50"
+                >
+                  {isUploadingImage ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Đang lưu...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Crop className="w-3 h-3" />
+                      <span>{vocab.imageUrl ? 'Cắt / Đổi ảnh' : 'Thêm ảnh mới'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {imageError && (
+                <p className="text-[11px] text-rose-600 bg-rose-50 px-2.5 py-1 rounded-md">{imageError}</p>
+              )}
+
+              {vocab.imageUrl ? (
+                <div className="relative group rounded-xl overflow-hidden border border-slate-200/80 bg-slate-900/5 max-h-60 flex items-center justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={vocab.imageUrl}
+                    alt={vocab.word}
+                    className="max-h-56 w-full object-contain rounded-lg"
+                  />
+                  <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/70 p-1.5 rounded-lg backdrop-blur-xs">
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      title="Chỉnh sửa hoặc đổi ảnh"
+                      className="px-2 py-1 rounded bg-white/20 hover:bg-white/40 text-white text-[11px] font-medium flex items-center gap-1 transition-colors"
+                    >
+                      <Crop className="w-3.5 h-3.5" />
+                      <span>Sửa</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemoveImage}
+                      title="Xóa ảnh"
+                      className="p-1 rounded bg-rose-500/80 hover:bg-rose-500 text-white text-[11px] transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onClick={() => imageInputRef.current?.click()}
+                  className="border-2 border-dashed border-slate-200 hover:border-brand-primary/50 hover:bg-brand-primarySoft/10 transition-all rounded-xl p-4 text-center cursor-pointer flex flex-col items-center justify-center gap-1 text-text-secondary group"
+                >
+                  <div className="p-2 rounded-full bg-slate-100 group-hover:bg-brand-primarySoft text-text-muted group-hover:text-brand-primary transition-colors">
+                    <ImageIcon className="w-5 h-5" />
+                  </div>
+                  <p className="text-xs font-semibold text-brand-ink">Thêm ảnh minh họa cho từ vựng này</p>
+                  <p className="text-[10px] text-text-muted">Hỗ trợ cắt ảnh vuông / chữ nhật, phóng to thu nhỏ, xoay 90° & lật ảnh</p>
+                </div>
+              )}
+            </div>
+
             {/* Definition EN */}
             {vocab.definitionEn && (
               <div className="space-y-1">
@@ -531,6 +661,15 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
             )}
           </div>
         )}
+
+        <ImageCropModal
+          isOpen={isCropOpen}
+          imageSrc={cropSrc}
+          onClose={() => setIsCropOpen(false)}
+          onComplete={handleCropComplete}
+          initialAspectRatio={4 / 3}
+          title={`Cắt & chỉnh ảnh cho từ "${vocab?.word || ''}"`}
+        />
       </motion.div>
     </div>
   );

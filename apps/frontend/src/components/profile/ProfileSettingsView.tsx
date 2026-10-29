@@ -19,6 +19,7 @@ import { Dialect } from '@/types';
 import { DictionaryProvider, useDictionaryProviders } from '@/lib/dictionary';
 import { DictionarySourceSelect } from '../dictionary/DictionarySourceSelect';
 import { speakWord } from '@/lib/speech';
+import { ImageCropModal } from '../common/ImageCropModal';
 
 export function ProfileSettingsView() {
   const { user, settings, updateSettings, uploadAvatar, removeAvatar, logout } = useVocelune();
@@ -27,6 +28,8 @@ export function ProfileSettingsView() {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [avatarSuccess, setAvatarSuccess] = useState<string | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [isCropOpen, setIsCropOpen] = useState(false);
 
   const { providers, error: dictionaryError } = useDictionaryProviders();
   const [dictionaryProvider, setDictionaryProvider] = useState<DictionaryProvider>(settings.dictionaryProvider || 'free_dictionary');
@@ -40,21 +43,34 @@ export function ProfileSettingsView() {
   const [dayStartHour, setDayStartHour] = useState(settings.dayStartHour);
   const [isSaved, setIsSaved] = useState(false);
 
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setAvatarError('Chỉ hỗ trợ định dạng PNG, JPEG hoặc WebP.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropSrc(reader.result as string);
+      setIsCropOpen(true);
+    };
+    reader.readAsDataURL(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleCropComplete = async (dataUrl: string) => {
     setAvatarError(null);
     setAvatarSuccess(null);
     setIsUploadingAvatar(true);
     try {
-      await uploadAvatar(file);
+      await uploadAvatar(dataUrl);
       setAvatarSuccess('Cập nhật ảnh đại diện thành công!');
       setTimeout(() => setAvatarSuccess(null), 3000);
     } catch (err: any) {
       setAvatarError(err?.message || 'Không thể tải ảnh đại diện lên.');
     } finally {
       setIsUploadingAvatar(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -366,6 +382,15 @@ export function ProfileSettingsView() {
           </button>
         </div>
       </form>
+
+      <ImageCropModal
+        isOpen={isCropOpen}
+        imageSrc={cropSrc}
+        onClose={() => setIsCropOpen(false)}
+        onComplete={handleCropComplete}
+        initialAspectRatio={1}
+        title="Cắt ảnh đại diện"
+      />
     </div>
   );
 }

@@ -45,9 +45,11 @@ export class FreeDictionaryAdapter implements DictionaryAdapter {
         const providerEntryRef = hash(`free:${entry.word}:${entryIndex}:${meaning.partOfSpeech}`);
         const pronunciations = (entry.phonetics ?? []).map(p => {
           const url = httpsUrl(p.audio);
-          return { dialect: audioDialect(url), ipa: p.text, audio: { status: url ? 'available' as const : 'unavailable' as const, ...(url ? { playbackUrl: url } : {}) } };
+          return { dialect: audioDialect(url), ipa: p.text || entry.phonetic, audio: { status: url ? 'available' as const : 'unavailable' as const, ...(url ? { playbackUrl: url } : {}) } };
         });
-        if (!pronunciations.some(p => p.ipa) && entry.phonetic) pronunciations.push({ dialect: 'unknown', ipa: entry.phonetic, audio: { status: 'unavailable' } });
+        if (entry.phonetic && !pronunciations.some(p => p.ipa === entry.phonetic)) {
+          pronunciations.push({ dialect: 'unknown', ipa: entry.phonetic, audio: { status: 'unavailable' } });
+        }
         pronunciations.sort((a, b) => Number(b.dialect === query.dialect) - Number(a.dialect === query.dialect));
         return { lemma: entry.word, partOfSpeech: normalizePos(meaning.partOfSpeech), providerEntryRef, senses: meaning.definitions.map((definition, index) => ({
           providerSenseRef: hash(`${providerEntryRef}:${meaningIndex}:${index}:${definition.definition}`), definition: textField(definition.definition), examples: examplesField(definition.example ? [definition.example] : []),

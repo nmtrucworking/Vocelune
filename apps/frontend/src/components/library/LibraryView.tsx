@@ -482,6 +482,13 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                           {/* Word & Audio */}
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2.5">
+                              {item.imageUrl && (
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.word}
+                                  className="w-8 h-8 rounded-md object-cover border border-slate-200/80 shadow-2xs shrink-0"
+                                />
+                              )}
                               <AudioButton
                                 text={item.word}
                                 dialect={item.dialect || settings.englishDialect}

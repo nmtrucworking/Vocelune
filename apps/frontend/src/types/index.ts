@@ -49,6 +49,8 @@ export interface VocabItem {
   deckId: string;
   tags: string[];
   notes?: string;
+  mediaId?: string | null;
+  imageUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }

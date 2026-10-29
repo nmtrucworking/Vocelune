@@ -16,6 +16,12 @@ import { WordsApiAdapter } from './dictionary/wordsapi.adapter';
 import { CollinsAdapter } from './dictionary/collins.adapter';
 import { DatamuseAdapter } from './dictionary/datamuse.adapter';
 import { hasValue, localProviders, mergeCandidates, persistableProvenance, senseValues, sourceResult } from './dictionary/lexical';
+import { resolveWordIpa } from './dictionary/ipa-converter';
+
+export const convertIpaSchema = z.object({
+  word: z.string().trim().min(1).max(100),
+  dialect: z.enum(['en-us', 'en-gb']).default('en-us'),
+}).strict();
 
 export const translateSchema = z.object({
   text: z.string().trim().min(1).max(5000),
@@ -167,6 +173,15 @@ export class DictionaryService {
     return this.translateDirect(input.text, input.from, input.to);
   }
 
+  async convertIpa(userId: string, body: unknown) {
+    const input = convertIpaSchema.parse(body);
+    const resolved = await resolveWordIpa(input.word, input.dialect);
+    if (!resolved) {
+      return { word: input.word, ipa: '', dialect: input.dialect, source: 'none' };
+    }
+    return { word: input.word, ipa: resolved.ipa, dialect: resolved.dialect, source: resolved.source };
+  }
+
   private cache = new Map<string, { expires: number; result: LookupResult }>();
   private cacheable(result: LookupResult) {
     return result.candidates.length > 0 && !result.relatedWords?.length && result.candidates.every(c => c.senses.every(s =>
@@ -234,7 +249,27 @@ export class DictionaryService {
     const fallbackUsed = requested !== 'auto' && base.provider !== requested;
     if (fallbackUsed) warnings.unshift(`Đã dùng nguồn dự phòng ${this.adapters[base.provider].status().name}.`);
     if (!candidates.length) warnings.push('Chưa tìm thấy nghĩa phù hợp. Bạn vẫn có thể nhập thủ công.');
-    const result: LookupResult = { ...base, query, requestedProvider: requested, fallbackUsed, candidates: mergeCandidates(candidates, query),
+    const mergedCandidates = mergeCandidates(candidates, query);
+    const needsIpa = mergedCandidates.some(c => c.senses.some(s => !s.pronunciations.some(p => p.ipa)));
+    if (needsIpa) {
+      try {
+        const resolved = await resolveWordIpa(query.word, query.dialect);
+        if (resolved) {
+          for (const candidate of mergedCandidates) {
+            for (const sense of candidate.senses) {
+              if (!sense.pronunciations.some(p => p.ipa)) {
+                sense.pronunciations.push({ dialect: resolved.dialect as any, ipa: resolved.ipa, audio: { status: 'unavailable' } });
+                if (!sense.persistFields.includes('phonetic')) sense.persistFields.push('phonetic');
+                sense.missingFields = sense.missingFields?.filter(f => f !== 'phonetic');
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignore fallback enhancement error
+      }
+    }
+    const result: LookupResult = { ...base, query, requestedProvider: requested, fallbackUsed, candidates: mergedCandidates,
       suggestions: [...suggestions].slice(0, 10), warnings: [...new Set([...base.warnings, ...warnings])], attemptedProviders, relatedWords,
       metrics: { externalRequests, durationMs: Date.now() - started, cacheHit: false } };
     // Store only complete open-licensed responses. No LIVE_ONLY text or derived
@@ -289,7 +324,7 @@ export class DictionaryService {
         provider, providerEntryRef: input.providerEntryRef, providerSenseRef: input.providerSenseRef,
         licenseMode: lookup.licenseMode, persistedFields, exportableFields, fieldSources: lexicalMetadata.provenance,
         attribution: sense.attribution, retrievedAt: new Date(), cefrMethod: input.cefr === 'unknown' ? 'unknown' : 'manual',
-      }) }, include: { decks: true } });
+      }) }, include: { decks: true, media: true } });
       return vocabDto(saved);
     });
   }

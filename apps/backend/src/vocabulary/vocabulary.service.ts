@@ -47,7 +47,7 @@ export class VocabularyService {
     return deck;
   }
   async requireVocab(tx: Tx, userId: string, vocabId: string) {
-    const vocab = await tx.vocabItem.findFirst({ where: { id: vocabId, userId, deletedAt: null }, include: { decks: true } });
+    const vocab = await tx.vocabItem.findFirst({ where: { id: vocabId, userId, deletedAt: null }, include: { decks: true, media: true } });
     if (!vocab) fail(404, 'NOT_FOUND', 'Không tìm thấy từ vựng.');
     return vocab;
   }
@@ -68,7 +68,7 @@ export class VocabularyService {
       provenance: { kind: 'user', cefrMethod: input.cefr === 'unknown' ? 'unknown' : 'manual' },
       decks: { create: deckIds.map(deckId => ({ deckId })) },
       cards: { create: [...new Set(cardTemplates)].map(template => ({ userId, template, schedulerConfigId: scheduler.id })) },
-    }, include: { decks: true } });
+    }, include: { decks: true, media: true } });
     return vocabDto(item);
   }
   create(userId: string, body: unknown) { return this.db.forUser(userId, tx => this.createInTx(tx, userId, vocabSchema.parse(body))); }
@@ -80,7 +80,7 @@ export class VocabularyService {
       ...(q.topicGroup && q.topicGroup !== 'all' ? { decks: { some: { deck: { userId, topicGroup: q.topicGroup, deletedAt: null } } } } : {}),
       ...(q.cefr ? { cefr: q.cefr } : {}), ...(q.partOfSpeech ? { partOfSpeech: q.partOfSpeech } : {}), ...(q.tag ? { tags: { has: q.tag } } : {}),
     };
-    const items = await this.db.vocabItem.findMany({ where, include: { decks: true }, orderBy: { id: 'asc' }, take: q.limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) });
+    const items = await this.db.vocabItem.findMany({ where, include: { decks: true, media: true }, orderBy: { id: 'asc' }, take: q.limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) });
     const hasMore = items.length > q.limit; if (hasMore) items.pop();
     return { items: items.map(vocabDto), nextCursor: hasMore ? items.at(-1)!.id : null, total: await this.db.vocabItem.count({ where }) };
   }
@@ -106,7 +106,7 @@ export class VocabularyService {
       const changedSense = next.word !== previous.word || next.partOfSpeech !== previous.partOfSpeech || next.definitionEn !== previous.definitionEn;
       const item = await tx.vocabItem.update({ where: { id: vocabId }, data: { ...fields, lexemeId: lexeme.id, senseKey,
         ...(changedSense ? { lexicalMetadata: Prisma.DbNull } : {}),
-        ...(fields.cefr ? { cefrSource: fields.cefr === 'unknown' ? 'unknown' : 'manual' } : {}) }, include: { decks: true } });
+        ...(fields.cefr ? { cefrSource: fields.cefr === 'unknown' ? 'unknown' : 'manual' } : {}) }, include: { decks: true, media: true } });
       // Invalidate reveal tokens/previews when question content changes.
       await tx.card.updateMany({ where: { vocabItemId: vocabId }, data: { version: { increment: 1 } } });
       return vocabDto(item);
@@ -449,7 +449,7 @@ export class VocabularyService {
   }
   async duplicatePreview(userId: string, body: unknown) {
     const { word, partOfSpeech } = z.object({ word: vocabSchema.shape.word, partOfSpeech: pos }).parse(body);
-    return (await this.db.vocabItem.findMany({ where: { userId, deletedAt: null, lexeme: { normalized: normalized(word), partOfSpeech } }, include: { decks: true } })).map(vocabDto);
+    return (await this.db.vocabItem.findMany({ where: { userId, deletedAt: null, lexeme: { normalized: normalized(word), partOfSpeech } }, include: { decks: true, media: true } })).map(vocabDto);
   }
   async merge(userId: string, body: unknown) {
     const { sourceId, targetId } = z.object({ sourceId: uuid, targetId: uuid }).strict().parse(body);
