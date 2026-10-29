@@ -10,6 +10,7 @@ import { TestsService } from './tests/tests.service';
 import { MediaService } from './integrations/media.service';
 import { NotificationsService } from './study/notifications.service';
 import { decryptEmail } from './common/crypto';
+import { sendEmailDirect } from './common/mailer';
 
 async function main() {
   if (!config.REDIS_URL) throw new Error('REDIS_URL is required for the worker');
@@ -32,16 +33,20 @@ async function main() {
     } catch (err) {
       process.stderr.write(`Notification scheduling tick error: ${(err as Error).message}\n`);
     }
-    if (smtp) {
+    const hasEmailConfig = !!(config.RESEND_API_KEY || (config.SMTP_PASSWORD?.startsWith('re_')) || config.SMTP_HOST);
+    if (hasEmailConfig) {
       await db.emailOutbox.updateMany({ where: { status: 'sending', lockedAt: { lt: new Date(Date.now() - 5 * 60000) } }, data: { status: 'pending' } });
       const emails = await db.emailOutbox.findMany({ where: { status: 'pending', attempts: { lt: 5 } }, take: 20 });
       for (const email of emails) {
         const claim = await db.emailOutbox.updateMany({ where: { id: email.id, status: 'pending' }, data: { status: 'sending', lockedAt: new Date(), attempts: { increment: 1 } } });
         if (!claim.count) continue;
         try {
-          await smtp.sendMail({ from: config.SMTP_FROM, to: email.to, subject: email.subject, text: decryptEmail(email.text) });
+          await sendEmailDirect({ to: email.to, subject: email.subject, text: decryptEmail(email.text) });
           await db.emailOutbox.update({ where: { id: email.id }, data: { status: 'sent', sentAt: new Date(), text: '', lockedAt: null } });
-        } catch { await db.emailOutbox.update({ where: { id: email.id }, data: { status: email.attempts + 1 >= 5 ? 'failed' : 'pending', lockedAt: null } }); }
+        } catch (err) {
+          process.stderr.write(`Worker email delivery error to ${email.to}: ${(err as Error).message}\n`);
+          await db.emailOutbox.update({ where: { id: email.id }, data: { status: email.attempts + 1 >= 5 ? 'failed' : 'pending', lockedAt: null } });
+        }
       }
     }
     await media.cleanup();

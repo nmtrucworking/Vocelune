@@ -1,8 +1,9 @@
-import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { HttpException, Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { Database } from '../common/db';
 import { config } from '../common/config';
 import { encryptEmail } from '../common/crypto';
+import { sendEmailDirect } from '../common/mailer';
 
 @Injectable()
 export class NotificationsService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -34,12 +35,7 @@ export class NotificationsService implements OnApplicationBootstrap, OnApplicati
     user: { id: string; email: string; displayName: string; settings?: { timezone?: string; newCardsPerDay?: number } | null },
     targetDate: string,
     appOrigin: string = this.getAppOrigin()
-  ): Promise<string | null> {
-    if (!config.EMAIL_ENCRYPTION_KEY) {
-      this.logger.warn('EMAIL_ENCRYPTION_KEY not set; skipping study reminder email');
-      return null;
-    }
-
+  ): Promise<string> {
     const dueCount = await this.db.card.count({
       where: { userId: user.id, dueAt: { lte: new Date() }, suspended: false, deletedAt: null },
     });
@@ -79,6 +75,24 @@ Chúc bạn có một ngày học tập và làm việc thật hiệu quả!
       },
     });
 
+    try {
+      await sendEmailDirect({
+        to: user.email,
+        subject,
+        text,
+      });
+      await this.db.emailOutbox.update({
+        where: { id: outbox.id },
+        data: { status: 'sent', sentAt: new Date(), text: '', lockedAt: null },
+      });
+    } catch (err) {
+      await this.db.emailOutbox.update({
+        where: { id: outbox.id },
+        data: { status: 'failed', lockedAt: null },
+      });
+      throw err;
+    }
+
     return outbox.id;
   }
 
@@ -86,12 +100,7 @@ Chúc bạn có một ngày học tập và làm việc thật hiệu quả!
     user: { id: string; email: string; displayName: string; settings?: { timezone?: string } | null },
     targetDate: string,
     appOrigin: string = this.getAppOrigin()
-  ): Promise<string | null> {
-    if (!config.EMAIL_ENCRYPTION_KEY) {
-      this.logger.warn('EMAIL_ENCRYPTION_KEY not set; skipping daily summary email');
-      return null;
-    }
-
+  ): Promise<string> {
     const timezone = user.settings?.timezone || 'Asia/Ho_Chi_Minh';
     const dayStart = DateTime.fromISO(targetDate, { zone: timezone }).startOf('day').toJSDate();
     const dayEnd = DateTime.fromISO(targetDate, { zone: timezone }).endOf('day').toJSDate();
@@ -192,6 +201,24 @@ Chúc bạn ngủ thật ngon để sẵn sàng cho một ngày mới hứng kh�
       },
     });
 
+    try {
+      await sendEmailDirect({
+        to: user.email,
+        subject,
+        text: body,
+      });
+      await this.db.emailOutbox.update({
+        where: { id: outbox.id },
+        data: { status: 'sent', sentAt: new Date(), text: '', lockedAt: null },
+      });
+    } catch (err) {
+      await this.db.emailOutbox.update({
+        where: { id: outbox.id },
+        data: { status: 'failed', lockedAt: null },
+      });
+      throw err;
+    }
+
     return outbox.id;
   }
 
@@ -266,7 +293,7 @@ Chúc bạn ngủ thật ngon để sẵn sàng cho một ngày mới hứng kh�
     return { remindersSent, summariesSent };
   }
 
-  async triggerTestReminder(userId: string): Promise<{ ok: boolean; emailId: string | null; subject: string }> {
+  async triggerTestReminder(userId: string): Promise<{ ok: boolean; emailId: string; subject: string; message: string }> {
     const user = await this.db.user.findUniqueOrThrow({
       where: { id: userId },
       include: { settings: true },
@@ -274,11 +301,16 @@ Chúc bạn ngủ thật ngon để sẵn sàng cho một ngày mới hứng kh�
     const timezone = user.settings?.timezone || 'Asia/Ho_Chi_Minh';
     const localNow = DateTime.now().setZone(timezone);
     const dateStr = localNow.toFormat('yyyy-MM-dd');
-    const id = await this.sendStudyReminderForUser(user, dateStr, this.getAppOrigin());
-    return { ok: true, emailId: id, subject: `[Vocelune] ⏰ Nhắc nhở lịch học hôm nay - ${dateStr}` };
+    try {
+      const id = await this.sendStudyReminderForUser(user, dateStr, this.getAppOrigin());
+      return { ok: true, emailId: id, subject: `[Vocelune] ⏰ Nhắc nhở lịch học hôm nay - ${dateStr}`, message: 'Đã gửi email nhắc nhở học tập thành công!' };
+    } catch (err) {
+      this.logger.error(`Failed to trigger test reminder for ${user.email}: ${(err as Error).message}`);
+      throw new HttpException((err as Error).message || 'Gửi email nhắc nhở thất bại.', 400);
+    }
   }
 
-  async triggerTestSummary(userId: string): Promise<{ ok: boolean; emailId: string | null; subject: string }> {
+  async triggerTestSummary(userId: string): Promise<{ ok: boolean; emailId: string; subject: string; message: string }> {
     const user = await this.db.user.findUniqueOrThrow({
       where: { id: userId },
       include: { settings: true },
@@ -286,7 +318,12 @@ Chúc bạn ngủ thật ngon để sẵn sàng cho một ngày mới hứng kh�
     const timezone = user.settings?.timezone || 'Asia/Ho_Chi_Minh';
     const localNow = DateTime.now().setZone(timezone);
     const dateStr = localNow.toFormat('yyyy-MM-dd');
-    const id = await this.sendDailySummaryForUser(user, dateStr, this.getAppOrigin());
-    return { ok: true, emailId: id, subject: `[Vocelune] 🌙 Tổng kết kiến thức ngày ${dateStr}` };
+    try {
+      const id = await this.sendDailySummaryForUser(user, dateStr, this.getAppOrigin());
+      return { ok: true, emailId: id, subject: `[Vocelune] 🌙 Tổng kết kiến thức ngày ${dateStr}`, message: 'Đã gửi email tổng kết kiến thức thành công!' };
+    } catch (err) {
+      this.logger.error(`Failed to trigger test summary for ${user.email}: ${(err as Error).message}`);
+      throw new HttpException((err as Error).message || 'Gửi email tổng kết thất bại.', 400);
+    }
   }
 }

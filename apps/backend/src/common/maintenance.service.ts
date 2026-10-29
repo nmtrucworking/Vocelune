@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
-import nodemailer from 'nodemailer';
 import { Database } from './db';
 import { config } from './config';
 import { TransferService } from '../transfer/transfer.service';
 import { TestsService } from '../tests/tests.service';
 import { MediaService } from '../integrations/media.service';
 import { decryptEmail } from './crypto';
+import { sendEmailDirect } from './mailer';
 
 @Injectable()
 export class MaintenanceService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -77,8 +77,9 @@ export class MaintenanceService implements OnApplicationBootstrap, OnApplication
         }
       }
 
-      // 3. Email outbox processing via SMTP
-      if (config.SMTP_HOST) {
+      // 3. Email outbox processing via Mailer (Resend REST API or SMTP)
+      const hasResend = !!(config.RESEND_API_KEY || (config.SMTP_PASSWORD?.startsWith('re_')) || process.env.RESEND_API_KEY);
+      if (hasResend || config.SMTP_HOST) {
         await this.db.emailOutbox.updateMany({
           where: { status: 'sending', lockedAt: { lt: new Date(Date.now() - 5 * 60000) } },
           data: { status: 'pending' },
@@ -88,13 +89,6 @@ export class MaintenanceService implements OnApplicationBootstrap, OnApplication
           take: 10,
         });
         if (emails.length > 0) {
-          const smtp = nodemailer.createTransport({
-            host: config.SMTP_HOST,
-            port: config.SMTP_PORT,
-            secure: config.SMTP_PORT === 465,
-            ...(config.SMTP_USER ? { auth: { user: config.SMTP_USER, pass: config.SMTP_PASSWORD } } : {}),
-            connectionTimeout: 10000,
-          });
           for (const email of emails) {
             const claim = await this.db.emailOutbox.updateMany({
               where: { id: email.id, status: 'pending' },
@@ -102,17 +96,19 @@ export class MaintenanceService implements OnApplicationBootstrap, OnApplication
             });
             if (!claim.count) continue;
             try {
-              await smtp.sendMail({
-                from: config.SMTP_FROM,
+              const plainText = decryptEmail(email.text);
+              await sendEmailDirect({
                 to: email.to,
                 subject: email.subject,
-                text: decryptEmail(email.text),
+                text: plainText,
               });
               await this.db.emailOutbox.update({
                 where: { id: email.id },
                 data: { status: 'sent', sentAt: new Date(), text: '', lockedAt: null },
               });
-            } catch {
+              this.logger.log(`Outbox email ${email.id} successfully delivered to ${email.to}`);
+            } catch (err) {
+              this.logger.error(`Outbox email ${email.id} delivery failed: ${(err as Error).message}`);
               await this.db.emailOutbox.update({
                 where: { id: email.id },
                 data: { status: email.attempts + 1 >= 5 ? 'failed' : 'pending', lockedAt: null },

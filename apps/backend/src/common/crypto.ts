@@ -1,9 +1,12 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'node:crypto';
 import { config } from './config';
-import { fail } from './http';
-function key() {
-  if (!config.EMAIL_ENCRYPTION_KEY) fail(503, 'EMAIL_NOT_CONFIGURED', 'Chưa cấu hình khóa mã hóa email.');
-  return Buffer.from(config.EMAIL_ENCRYPTION_KEY, 'hex');
+
+function key(): Buffer {
+  if (config.EMAIL_ENCRYPTION_KEY) {
+    return Buffer.from(config.EMAIL_ENCRYPTION_KEY, 'hex');
+  }
+  // Safe deterministic fallback derived from DATABASE_URL if user hasn't set EMAIL_ENCRYPTION_KEY
+  return createHash('sha256').update((config.DATABASE_URL || 'vocelune-default-key') + ':email-encryption-fallback').digest();
 }
 export function encryptEmail(text: string) {
   const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key(), iv);

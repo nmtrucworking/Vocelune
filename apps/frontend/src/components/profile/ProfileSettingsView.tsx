@@ -60,8 +60,8 @@ export function ProfileSettingsView() {
   const handleTestReminder = async () => {
     setIsTestingReminder(true);
     try {
-      const res = await api<{ ok: boolean; subject: string }>('/notifications/test-reminder', { method: 'POST' });
-      notify.success('Đã xếp hàng email nhắc nhở!', `Tiêu đề: "${res.subject}"`);
+      const res = await api<{ ok: boolean; subject: string; message?: string }>('/notifications/test-reminder', { method: 'POST' });
+      notify.success('Đã gửi email nhắc nhở!', res.message || `Tiêu đề: "${res.subject}"`);
     } catch (err: any) {
       notify.error('Không thể gửi email thử', err?.message || 'Lỗi kết nối máy chủ.');
     } finally {
@@ -72,8 +72,8 @@ export function ProfileSettingsView() {
   const handleTestSummary = async () => {
     setIsTestingSummary(true);
     try {
-      const res = await api<{ ok: boolean; subject: string }>('/notifications/test-summary', { method: 'POST' });
-      notify.success('Đã xếp hàng email tổng kết!', `Tiêu đề: "${res.subject}"`);
+      const res = await api<{ ok: boolean; subject: string; message?: string }>('/notifications/test-summary', { method: 'POST' });
+      notify.success('Đã gửi email tổng kết!', res.message || `Tiêu đề: "${res.subject}"`);
     } catch (err: any) {
       notify.error('Không thể gửi email thử', err?.message || 'Lỗi kết nối máy chủ.');
     } finally {

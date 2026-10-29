@@ -12,6 +12,8 @@ const schema = z.object({
   SESSION_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   REDIS_URL: z.preprocess(value => value === '' ? undefined : value, z.string().url().optional()),
   EMAIL_ENCRYPTION_KEY: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM: z.string().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().default(1025),
   SMTP_USER: z.string().optional(),
