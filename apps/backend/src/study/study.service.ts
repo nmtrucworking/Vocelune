@@ -25,7 +25,28 @@ export class StudyService {
     const remaining = Math.max(0, settings.newCardsPerDay - learned);
     const eligible = { userId, deletedAt: null, suspended: false, vocabItem: { deletedAt: null }, OR: [{ buriedUntil: null }, { buriedUntil: { lte: now } }] };
     const due = await this.db.card.findMany({ where: { ...eligible, state: { not: 'new' }, dueAt: { lte: now } }, orderBy: [{ dueAt: 'asc' }, { id: 'asc' }], take: 1000 });
-    const fresh = await this.db.card.findMany({ where: { ...eligible, state: 'new', dueAt: { lte: now } }, orderBy: { id: 'asc' }, take: remaining });
+    
+    // Fetch fresh new cards, prioritizing newly created vocabulary items and selecting 1 card per distinct vocabItem
+    let fresh: Card[] = [];
+    if (remaining > 0) {
+      const candidateFresh = await this.db.card.findMany({
+        where: { ...eligible, state: 'new', dueAt: { lte: now } },
+        orderBy: [{ vocabItem: { createdAt: 'desc' } }, { id: 'asc' }],
+        take: Math.max(remaining * 4, 100),
+      });
+      const freshVocabMap = new Map<string, (typeof candidateFresh)[0]>();
+      for (const c of candidateFresh) {
+        const existing = freshVocabMap.get(c.vocabItemId);
+        if (!existing) {
+          freshVocabMap.set(c.vocabItemId, c);
+        } else if (c.template === 'en_vi' && existing.template !== 'en_vi') {
+          freshVocabMap.set(c.vocabItemId, c);
+        }
+        if (freshVocabMap.size >= remaining) break;
+      }
+      fresh = Array.from(freshVocabMap.values());
+    }
+
     const ordered = [...due.filter(c => c.state !== 'review'), ...due.filter(c => c.state === 'review'), ...fresh];
     const seen = new Set<string>();
     const cards = ordered.filter(c => {

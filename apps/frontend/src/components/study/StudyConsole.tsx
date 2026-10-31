@@ -28,7 +28,7 @@ import { speakWord } from '@/lib/speech';
 import { triggerConfetti } from '@/lib/confetti';
 import { AudioButton } from '../common/AudioButton';
 
-export type StudyScope = 'due' | 'ahead' | 'all';
+export type StudyScope = 'due' | 'new' | 'ahead' | 'all';
 
 export function StudyConsole() {
   const { dueCards, vocabItems, decks, gradeCard, undoLastReview, canUndo, settings, revealCard, cards, refresh } =
@@ -36,6 +36,7 @@ export function StudyConsole() {
   const { notify } = useNotification();
 
   const [studyScope, setStudyScope] = useState<StudyScope>('due');
+  const [newSortOrder, setNewSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [selectedTopicGroup, setSelectedTopicGroup] = useState<string>('all');
   const [selectedDeckId, setSelectedDeckId] = useState<string>('all');
   const [isGrading, setIsGrading] = useState(false);
@@ -83,6 +84,50 @@ export function StudyConsole() {
 
   const dueIdSet = useMemo(() => new Set(scopedDueCards.map((c) => c.id)), [scopedDueCards]);
 
+  // All unlearned/new cards (1 card per vocabItem, prioritizing newly added words)
+  const scopedNewCards = useMemo(() => {
+    const cardByVocab = new Map<string, Card>();
+    const vocabMap = new Map(vocabItems.map((v) => [v.id, v]));
+
+    for (const card of cards) {
+      if (card.suspended) continue;
+      if (card.state !== 'new') continue;
+
+      const vocab = vocabMap.get(card.vocabItemId);
+      if (!vocab) continue;
+      if (selectedDeckId !== 'all' && vocab.deckId !== selectedDeckId) continue;
+      if (selectedTopicGroup !== 'all') {
+        const d = deckMap.get(vocab.deckId);
+        if ((d?.topicGroup || 'Chung') !== selectedTopicGroup) continue;
+      }
+
+      const existing = cardByVocab.get(card.vocabItemId);
+      if (!existing) {
+        cardByVocab.set(card.vocabItemId, card);
+      } else {
+        const existingIsEnVi = existing.template === 'en_vi';
+        const currentIsEnVi = card.template === 'en_vi';
+        if (currentIsEnVi && !existingIsEnVi) {
+          cardByVocab.set(card.vocabItemId, card);
+        }
+      }
+    }
+
+    const list = Array.from(cardByVocab.values());
+    return list.sort((a, b) => {
+      const vocabA = vocabMap.get(a.vocabItemId);
+      const vocabB = vocabMap.get(b.vocabItemId);
+      const timeA = vocabA?.createdAt ? new Date(vocabA.createdAt).getTime() : 0;
+      const timeB = vocabB?.createdAt ? new Date(vocabB.createdAt).getTime() : 0;
+      if (newSortOrder === 'newest') {
+        return timeB - timeA; // Newly added words first!
+      } else {
+        return timeA - timeB;
+      }
+    });
+  }, [cards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap, newSortOrder]);
+
+  // Cards in learning/review schedule that are not yet due (ahead of schedule)
   const aheadCards = useMemo(() => {
     const dueVocabIds = new Set(scopedDueCards.map((c) => c.vocabItemId));
     const now = Date.now();
@@ -90,6 +135,7 @@ export function StudyConsole() {
 
     for (const card of cards) {
       if (card.suspended) continue;
+      if (card.state === 'new') continue; // Unlearned cards belong in scopedNewCards
       if (card.buriedUntil && new Date(card.buriedUntil).getTime() > now) continue;
       if (dueVocabIds.has(card.vocabItemId)) continue;
 
@@ -124,22 +170,44 @@ export function StudyConsole() {
   }, [cards, scopedDueCards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
 
   const allCards = useMemo(() => {
-    return [...scopedDueCards, ...aheadCards];
-  }, [scopedDueCards, aheadCards]);
+    const seen = new Set<string>();
+    const list: Card[] = [];
+    for (const c of scopedDueCards) {
+      if (!seen.has(c.vocabItemId)) {
+        seen.add(c.vocabItemId);
+        list.push(c);
+      }
+    }
+    for (const c of scopedNewCards) {
+      if (!seen.has(c.vocabItemId)) {
+        seen.add(c.vocabItemId);
+        list.push(c);
+      }
+    }
+    for (const c of aheadCards) {
+      if (!seen.has(c.vocabItemId)) {
+        seen.add(c.vocabItemId);
+        list.push(c);
+      }
+    }
+    return list;
+  }, [scopedDueCards, scopedNewCards, aheadCards]);
 
   const scopeStats = useMemo(() => {
     return {
       due: scopedDueCards.length,
+      new: scopedNewCards.length,
       ahead: aheadCards.length,
-      all: scopedDueCards.length + aheadCards.length,
+      all: allCards.length,
     };
-  }, [scopedDueCards.length, aheadCards.length]);
+  }, [scopedDueCards.length, scopedNewCards.length, aheadCards.length, allCards.length]);
 
   const candidateCards = useMemo(() => {
     if (studyScope === 'due') return scopedDueCards;
+    if (studyScope === 'new') return scopedNewCards;
     if (studyScope === 'ahead') return aheadCards;
     return allCards;
-  }, [studyScope, scopedDueCards, aheadCards, allCards]);
+  }, [studyScope, scopedDueCards, scopedNewCards, aheadCards, allCards]);
 
   const grading = useRef(false);
   const [revealReady, setRevealReady] = useState(false);
@@ -165,12 +233,13 @@ export function StudyConsole() {
 
   // Track session configuration to know when to start or reinitialize a session
   const lastSessionConfigRef = useRef<string>('');
-  const currentSessionConfig = `${studyScope}::${selectedTopicGroup}::${selectedDeckId}`;
+  const currentSessionConfig = `${studyScope}::${selectedTopicGroup}::${selectedDeckId}::${newSortOrder}`;
 
   const initSession = useCallback(
     (scope: StudyScope = studyScope) => {
       let nextCards: Card[];
       if (scope === 'due') nextCards = scopedDueCards;
+      else if (scope === 'new') nextCards = scopedNewCards;
       else if (scope === 'ahead') nextCards = aheadCards;
       else nextCards = allCards;
 
@@ -182,9 +251,9 @@ export function StudyConsole() {
       setTypedSubmitted(false);
       setSelectedOption(null);
       setStartTime(Date.now());
-      lastSessionConfigRef.current = `${scope}::${selectedTopicGroup}::${selectedDeckId}`;
+      lastSessionConfigRef.current = `${scope}::${selectedTopicGroup}::${selectedDeckId}::${newSortOrder}`;
     },
-    [studyScope, scopedDueCards, aheadCards, allCards, selectedTopicGroup, selectedDeckId]
+    [studyScope, scopedDueCards, scopedNewCards, aheadCards, allCards, selectedTopicGroup, selectedDeckId, newSortOrder]
   );
 
   // Whenever studyScope, topic group, or deck selection changes, initialize fresh session
@@ -432,6 +501,23 @@ export function StudyConsole() {
         )}
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4 flex-wrap">
+          {scopeStats.new > 0 && studyScope !== 'new' && (
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                setStudyScope('new');
+                setCompletedCount(0);
+                setCurrentIndex(0);
+                setIsFlipped(false);
+              }}
+              className="px-5 py-3 bg-brand-primary hover:bg-brand-primaryHover text-white font-semibold text-xs rounded-control transition-colors shadow-md flex items-center gap-2"
+            >
+              <Sparkles className="w-4 h-4 fill-white" />
+              <span>Học từ vựng mới chưa học ({scopeStats.new} từ)</span>
+            </motion.button>
+          )}
+
           {scopeStats.ahead > 0 && studyScope !== 'ahead' && (
             <motion.button
               whileHover={{ scale: 1.03 }}
@@ -459,7 +545,7 @@ export function StudyConsole() {
                 setCurrentIndex(0);
                 setIsFlipped(false);
               }}
-              className="px-5 py-3 bg-brand-primary text-white hover:bg-brand-primaryHover font-semibold text-xs rounded-control transition-colors shadow-md flex items-center gap-2"
+              className="px-5 py-3 bg-slate-800 text-white hover:bg-slate-900 font-semibold text-xs rounded-control transition-colors shadow-md flex items-center gap-2"
             >
               <RotateCcw className="w-4 h-4" />
               <span>Ôn tập toàn bộ kho từ ({scopeStats.all} thẻ)</span>
@@ -483,7 +569,7 @@ export function StudyConsole() {
             </motion.button>
           )}
 
-          {(studyScope === 'ahead' || studyScope === 'all') && queue.length > 0 && (
+          {(studyScope === 'ahead' || studyScope === 'all' || studyScope === 'new') && queue.length > 0 && (
             <motion.button
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
@@ -507,7 +593,7 @@ export function StudyConsole() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-3.5">
-      {/* Scope Switcher: Đến hạn vs Học sớm vs Tất cả */}
+      {/* Scope Switcher: Đến hạn vs Từ mới vs Học sớm vs Tất cả */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 bg-slate-100/80 border border-slate-200/90 rounded-xl shadow-2xs">
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
@@ -529,6 +615,28 @@ export function StudyConsole() {
               }`}
             >
               {scopeStats.due}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setStudyScope('new');
+              setSlideDirection(1);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+              studyScope === 'new'
+                ? 'bg-white text-brand-primary shadow-2xs border border-brand-primary/30'
+                : 'text-text-secondary hover:text-brand-ink'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-brand-primary fill-brand-primary/20" />
+            <span>Từ mới chưa học</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                studyScope === 'new' ? 'bg-brand-primarySoft text-brand-primary' : 'bg-slate-200/80 text-slate-600'
+              }`}
+            >
+              {scopeStats.new}
             </span>
           </button>
 
@@ -577,12 +685,26 @@ export function StudyConsole() {
           </button>
         </div>
 
-        {studyScope === 'ahead' && (
-          <span className="text-[10px] text-amber-700 font-medium px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200/60 inline-flex items-center gap-1 self-start sm:self-auto">
-            <Zap className="w-2.5 h-2.5 text-amber-600" />
-            <span>Học trước hạn: FSRS tự động cập nhật độ nhớ</span>
-          </span>
-        )}
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {studyScope === 'new' && (
+            <button
+              type="button"
+              onClick={() => setNewSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'))}
+              className="text-[10px] font-semibold text-brand-primary bg-brand-primarySoft/80 hover:bg-brand-primarySoft px-2.5 py-1 rounded-lg border border-brand-primary/20 inline-flex items-center gap-1 transition-colors shadow-2xs"
+              title="Nhấn để đổi thứ tự ưu tiên học từ mới"
+            >
+              <Sparkles className="w-3 h-3 text-brand-primary" />
+              <span>{newSortOrder === 'newest' ? 'Ưu tiên: Từ vừa thêm trước' : 'Ưu tiên: Từ cũ trước'}</span>
+            </button>
+          )}
+
+          {studyScope === 'ahead' && (
+            <span className="text-[10px] text-amber-700 font-medium px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200/60 inline-flex items-center gap-1">
+              <Zap className="w-2.5 h-2.5 text-amber-600" />
+              <span>Học trước hạn: FSRS tự động cập nhật độ nhớ</span>
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Top Header: Progress & Mode Switcher */}
