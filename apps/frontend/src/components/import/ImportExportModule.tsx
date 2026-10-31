@@ -27,7 +27,16 @@ export function ImportExportModule() {
   const [policy, setPolicy] = useState('skip');
   const [job, setJob] = useState<Job | null>(null);
   const [busy, setBusy] = useState(false);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [uploadFileName, setUploadFileName] = useState('');
+  const [uploadFileSize, setUploadFileSize] = useState('');
+  const [isDragActive, setIsDragActive] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState<'csv' | 'xlsx' | null>(null);
+  const [isDownloadingErrors, setIsDownloadingErrors] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const actionLockRef = useRef<boolean>(false);
 
   useEffect(() => {
     void api<typeof history>('/imports').then(setHistory).catch(() => {});
@@ -45,7 +54,15 @@ export function ImportExportModule() {
     };
   }, []);
 
-  const run = async (action: () => Promise<void>) => {
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const runWithLock = async (action: () => Promise<void>) => {
+    if (actionLockRef.current || busy || isUploadingFile) return;
+    actionLockRef.current = true;
     setBusy(true);
     try {
       await action();
@@ -54,31 +71,89 @@ export function ImportExportModule() {
       notify.error('Thao tác không thành công', msg);
     } finally {
       setBusy(false);
+      setTimeout(() => {
+        actionLockRef.current = false;
+      }, 400);
     }
   };
 
+  const run = runWithLock;
+
   const upload = async (file: File) => {
+    if (actionLockRef.current || isUploadingFile) return;
+    actionLockRef.current = true;
+
     if (file.size > 10 * 1024 * 1024) {
       notify.error('Tệp quá lớn', 'Kích thước tệp tối đa cho phép là 10 MB.');
+      actionLockRef.current = false;
       return;
     }
     const targetDeckId = deckId || decks[0]?.id;
     if (!targetDeckId) {
       notify.warning('Chưa có bộ từ', 'Vui lòng tạo ít nhất một bộ từ trước khi nhập.');
+      actionLockRef.current = false;
       return;
     }
-    const form = new FormData();
-    form.append('file', file);
-    form.append('deckId', targetDeckId);
-    form.append('policy', policy);
 
-    const uploadedJob = await api<Job>('/imports/upload', {
-      method: 'POST',
-      body: form,
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
-    setJob(uploadedJob);
-    notify.info('Tải tệp thành công', `Đã quét ${uploadedJob.rows.length} dòng. Vui lòng kiểm tra bản xem trước bên dưới.`);
+    setUploadFileName(file.name);
+    setUploadFileSize(formatBytes(file.size));
+    setIsUploadingFile(true);
+    setBusy(true);
+
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('deckId', targetDeckId);
+      form.append('policy', policy);
+
+      const uploadedJob = await api<Job>('/imports/upload', {
+        method: 'POST',
+        body: form,
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      });
+      setJob(uploadedJob);
+      notify.info('Tải tệp thành công', `Đã quét ${uploadedJob.rows.length} dòng. Vui lòng kiểm tra bản xem trước bên dưới.`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Lỗi khi tải hoặc phân tích cú pháp tệp.';
+      notify.error('Tải tệp thất bại', msg);
+    } finally {
+      setIsUploadingFile(false);
+      setBusy(false);
+      setTimeout(() => {
+        actionLockRef.current = false;
+      }, 400);
+    }
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!busy && !isUploadingFile) setIsDragActive(true);
+  };
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!busy && !isUploadingFile) setIsDragActive(true);
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+    if (busy || isUploadingFile) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      const lower = file.name.toLowerCase();
+      if (!lower.endsWith('.csv') && !lower.endsWith('.xlsx')) {
+        notify.warning('Định dạng không hỗ trợ', 'Vui lòng chọn tệp .csv hoặc .xlsx.');
+        return;
+      }
+      void upload(file);
+    }
   };
 
   const pollJobStatus = (jobId: string) => {
@@ -196,15 +271,24 @@ export function ImportExportModule() {
             {(['csv', 'xlsx'] as const).map((format) => (
               <button
                 key={format}
-                disabled={busy}
-                className="inline-flex items-center gap-1 border border-slate-200 rounded-control px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                disabled={busy || isDownloadingTemplate !== null}
+                className="inline-flex items-center gap-1 border border-slate-200 rounded-control px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
                 onClick={() =>
-                  void run(() =>
-                    downloadApi(`/imports/template?format=${format}`, `vocelune-template.${format}`)
-                  )
+                  void run(async () => {
+                    setIsDownloadingTemplate(format);
+                    try {
+                      await downloadApi(`/imports/template?format=${format}`, `vocelune-template.${format}`);
+                    } finally {
+                      setIsDownloadingTemplate(null);
+                    }
+                  })
                 }
               >
-                <Download className="w-3 h-3 text-slate-500" />
+                {isDownloadingTemplate === format ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-brand-primary" />
+                ) : (
+                  <Download className="w-3 h-3 text-slate-500" />
+                )}
                 Mẫu .{format}
               </button>
             ))}
@@ -219,13 +303,13 @@ export function ImportExportModule() {
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Bộ từ đích</label>
             <select
-              disabled={busy}
+              disabled={busy || isUploadingFile}
               value={deckId}
               onChange={(e) => {
                 setDeckId(e.target.value);
                 setJob(null);
               }}
-              className="w-full border border-slate-200 rounded-control px-3 py-1.5 text-xs bg-surface-base text-brand-ink"
+              className="w-full border border-slate-200 rounded-control px-3 py-1.5 text-xs bg-surface-base text-brand-ink disabled:opacity-60"
             >
               {decks.map((d) => (
                 <option key={d.id} value={d.id}>
@@ -240,13 +324,13 @@ export function ImportExportModule() {
               Khi trùng đúng từ + từ loại + nghĩa
             </label>
             <select
-              disabled={busy}
+              disabled={busy || isUploadingFile}
               value={policy}
               onChange={(e) => {
                 setPolicy(e.target.value);
                 setJob(null);
               }}
-              className="w-full border border-slate-200 rounded-control px-3 py-1.5 text-xs bg-surface-base text-brand-ink"
+              className="w-full border border-slate-200 rounded-control px-3 py-1.5 text-xs bg-surface-base text-brand-ink disabled:opacity-60"
             >
               <option value="skip">Bỏ qua (Giữ nguyên từ cũ)</option>
               <option value="merge">Cập nhật ghi chú và ví dụ mới</option>
@@ -256,23 +340,68 @@ export function ImportExportModule() {
         </div>
 
         <div className="mt-1">
-          <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 hover:border-brand-primary rounded-xl p-4 cursor-pointer bg-slate-50/50 hover:bg-brand-canvas transition-colors">
-            <Upload className="w-6 h-6 text-brand-primary mb-1.5" />
-            <span className="text-xs font-semibold text-brand-ink">Chọn tệp CSV hoặc XLSX từ máy</span>
-            <span className="text-[11px] text-text-secondary mt-0.5">Kéo thả hoặc click để duyệt tệp (Tối đa 10 MB)</span>
-            <input
-              disabled={busy}
-              type="file"
-              accept=".csv,.xlsx"
-              className="hidden"
-              aria-label="Chọn tệp từ vựng"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void run(() => upload(file));
-                e.target.value = '';
+          {isUploadingFile ? (
+            <div className="flex flex-col items-center justify-center p-6 border-2 border-brand-primary/60 bg-brand-primarySoft/30 rounded-xl space-y-3">
+              <Loader2 className="w-8 h-8 text-brand-primary animate-spin" />
+              <div className="text-center">
+                <p className="text-xs font-bold text-brand-ink">
+                  Đang tải lên & phân tích cú pháp: <span className="text-brand-primary font-mono">{uploadFileName}</span> {uploadFileSize && `(${uploadFileSize})`}
+                </p>
+                <p className="text-[11px] text-text-secondary mt-1">
+                  Đang quét các dòng từ vựng, kiểm tra cấu trúc cột và tạo bản xem trước... Vui lòng đợi trong giây lát.
+                </p>
+              </div>
+              <div className="w-56 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                <div className="bg-brand-primary h-full rounded-full animate-pulse" style={{ width: '75%' }} />
+              </div>
+            </div>
+          ) : (
+            <div
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => {
+                if (!busy && !isUploadingFile) fileInputRef.current?.click();
               }}
-            />
-          </label>
+              className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-5 cursor-pointer transition-all ${
+                isDragActive
+                  ? 'border-brand-primary bg-brand-primarySoft/40 ring-4 ring-brand-primary/10 scale-[1.005]'
+                  : 'border-slate-200 hover:border-brand-primary bg-slate-50/50 hover:bg-brand-canvas'
+              }`}
+            >
+              <Upload className={`w-7 h-7 mb-1.5 transition-transform ${isDragActive ? 'text-brand-primary scale-110' : 'text-brand-primary'}`} />
+              <span className="text-xs font-bold text-brand-ink">
+                {isDragActive ? 'Thả tệp vào đây để tải lên ngay!' : 'Chọn tệp CSV hoặc XLSX từ máy tính'}
+              </span>
+              <span className="text-[11px] text-text-secondary mt-0.5">
+                Kéo thả tệp hoặc nhấp để duyệt thư mục (Hỗ trợ định dạng .csv, .xlsx · Tối đa 10 MB)
+              </span>
+
+              {uploadFileName && !isUploadingFile && job && (
+                <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-full text-[11px] text-slate-700 font-medium shadow-2xs">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Tệp hiện tại: <strong>{uploadFileName}</strong> {uploadFileSize && `(${uploadFileSize})`}</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-brand-primary hover:underline font-semibold">Bấm để đổi tệp khác</span>
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                disabled={busy || isUploadingFile}
+                type="file"
+                accept=".csv,.xlsx"
+                className="hidden"
+                aria-label="Chọn tệp từ vựng"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void upload(file);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+          )}
         </div>
       </section>
 
@@ -387,9 +516,9 @@ export function ImportExportModule() {
           <div className="flex gap-2 flex-wrap pt-1">
             {job.status !== 'completed' && (
               <button
-                disabled={busy || isProcessing}
+                disabled={busy || isProcessing || isUploadingFile}
                 onClick={() => void run(commit)}
-                className="bg-brand-primary text-white font-semibold px-4 py-2 rounded-control disabled:opacity-50 flex items-center gap-1.5 shadow-2xs hover:bg-brand-primary/95 transition-all text-xs"
+                className="bg-brand-primary text-white font-semibold px-4 py-2 rounded-control disabled:opacity-50 flex items-center gap-1.5 shadow-2xs hover:bg-brand-primary/95 transition-all text-xs cursor-pointer"
               >
                 {busy || isProcessing ? (
                   <>
@@ -397,38 +526,55 @@ export function ImportExportModule() {
                     Đang xử lý nền...
                   </>
                 ) : (
-                  'Xác nhận nhập'
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Xác nhận nhập
+                  </>
                 )}
               </button>
             )}
 
             <button
-              disabled={busy}
-              className="border border-slate-200 rounded-control px-3 py-2 text-xs font-medium hover:bg-slate-50 transition-colors flex items-center gap-1.5 text-slate-700"
+              disabled={busy || isCheckingStatus}
+              className="border border-slate-200 rounded-control px-3 py-2 text-xs font-medium hover:bg-slate-50 transition-colors flex items-center gap-1.5 text-slate-700 disabled:opacity-50 cursor-pointer"
               onClick={() =>
                 void run(async () => {
-                  const updated = await api<Job>(`/imports/${job.id}`);
-                  setJob(updated);
-                  await refresh();
-                  notify.info('Đã cập nhật trạng thái', `Trạng thái hiện tại: ${updated.status}`);
+                  setIsCheckingStatus(true);
+                  try {
+                    const updated = await api<Job>(`/imports/${job.id}`);
+                    setJob(updated);
+                    await refresh();
+                    notify.info('Đã cập nhật trạng thái', `Trạng thái hiện tại: ${updated.status}`);
+                  } finally {
+                    setIsCheckingStatus(false);
+                  }
                 })
               }
             >
-              <RefreshCw className="w-3 h-3" />
-              Kiểm tra trạng thái
+              <RefreshCw className={`w-3 h-3 ${isCheckingStatus ? 'animate-spin text-brand-primary' : ''}`} />
+              {isCheckingStatus ? 'Đang kiểm tra...' : 'Kiểm tra trạng thái'}
             </button>
 
             <button
-              disabled={busy}
-              className="border border-slate-200 rounded-control px-3 py-2 text-xs font-medium hover:bg-slate-50 transition-colors flex items-center gap-1.5 text-slate-700"
+              disabled={busy || isDownloadingErrors}
+              className="border border-slate-200 rounded-control px-3 py-2 text-xs font-medium hover:bg-slate-50 transition-colors flex items-center gap-1.5 text-slate-700 disabled:opacity-50 cursor-pointer"
               onClick={() =>
-                void run(() =>
-                  downloadApi(`/imports/${job.id}/errors.csv`, 'vocelune-import-errors.csv')
-                )
+                void run(async () => {
+                  setIsDownloadingErrors(true);
+                  try {
+                    await downloadApi(`/imports/${job.id}/errors.csv`, 'vocelune-import-errors.csv');
+                  } finally {
+                    setIsDownloadingErrors(false);
+                  }
+                })
               }
             >
-              <Download className="w-3 h-3" />
-              Tải báo cáo lỗi
+              {isDownloadingErrors ? (
+                <Loader2 className="w-3 h-3 animate-spin text-brand-primary" />
+              ) : (
+                <Download className="w-3 h-3" />
+              )}
+              {isDownloadingErrors ? 'Đang chuẩn bị tệp...' : 'Tải báo cáo lỗi'}
             </button>
           </div>
         </section>

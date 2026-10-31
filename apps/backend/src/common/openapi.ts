@@ -32,6 +32,7 @@ export function enrichOpenApi(document: OpenAPIObject) {
     'post /dictionary/vocabulary': saveDictionarySchema,
     'post /notifications/test-reminder': z.object({}).optional(),
     'post /notifications/test-summary': z.object({}).optional(),
+    'post /media/fetch-url': z.object({ url: z.string() }),
     'post /exports': z.object({ format: z.enum(['csv', 'xlsx', 'json']) }),
   };
   for (const [path, item] of Object.entries(document.paths)) {

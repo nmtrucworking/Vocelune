@@ -63,34 +63,83 @@ export function StudyConsole() {
   }, [cards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
 
   const scopedDueCards = useMemo(() => {
-    return dueCards.filter((card) => {
+    const seen = new Set<string>();
+    const list: Card[] = [];
+    for (const card of dueCards) {
+      if (card.suspended) continue;
+      if (seen.has(card.vocabItemId)) continue;
       const vocab = vocabItems.find((v) => v.id === card.vocabItemId);
-      if (!vocab) return false;
-      if (selectedDeckId !== 'all' && vocab.deckId !== selectedDeckId) return false;
+      if (!vocab) continue;
+      if (selectedDeckId !== 'all' && vocab.deckId !== selectedDeckId) continue;
       if (selectedTopicGroup !== 'all') {
         const d = deckMap.get(vocab.deckId);
-        if ((d?.topicGroup || 'Chung') !== selectedTopicGroup) return false;
+        if ((d?.topicGroup || 'Chung') !== selectedTopicGroup) continue;
       }
-      return true;
-    });
+      seen.add(card.vocabItemId);
+      list.push(card);
+    }
+    return list;
   }, [dueCards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
 
   const dueIdSet = useMemo(() => new Set(scopedDueCards.map((c) => c.id)), [scopedDueCards]);
 
+  const aheadCards = useMemo(() => {
+    const dueVocabIds = new Set(scopedDueCards.map((c) => c.vocabItemId));
+    const now = Date.now();
+    const cardByVocab = new Map<string, Card>();
+
+    for (const card of cards) {
+      if (card.suspended) continue;
+      if (card.buriedUntil && new Date(card.buriedUntil).getTime() > now) continue;
+      if (dueVocabIds.has(card.vocabItemId)) continue;
+
+      const vocab = vocabItems.find((v) => v.id === card.vocabItemId);
+      if (!vocab) continue;
+      if (selectedDeckId !== 'all' && vocab.deckId !== selectedDeckId) continue;
+      if (selectedTopicGroup !== 'all') {
+        const d = deckMap.get(vocab.deckId);
+        if ((d?.topicGroup || 'Chung') !== selectedTopicGroup) continue;
+      }
+
+      const existing = cardByVocab.get(card.vocabItemId);
+      if (!existing) {
+        cardByVocab.set(card.vocabItemId, card);
+      } else {
+        const existingIsEnVi = existing.template === 'en_vi';
+        const currentIsEnVi = card.template === 'en_vi';
+        if (currentIsEnVi && !existingIsEnVi) {
+          cardByVocab.set(card.vocabItemId, card);
+        } else if (
+          currentIsEnVi === existingIsEnVi &&
+          new Date(card.dueAt).getTime() < new Date(existing.dueAt).getTime()
+        ) {
+          cardByVocab.set(card.vocabItemId, card);
+        }
+      }
+    }
+
+    return Array.from(cardByVocab.values()).sort(
+      (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
+    );
+  }, [cards, scopedDueCards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
+
+  const allCards = useMemo(() => {
+    return [...scopedDueCards, ...aheadCards];
+  }, [scopedDueCards, aheadCards]);
+
   const scopeStats = useMemo(() => {
-    const ahead = scopedCards.filter((c) => !dueIdSet.has(c.id)).length;
     return {
       due: scopedDueCards.length,
-      ahead,
-      all: scopedCards.length,
+      ahead: aheadCards.length,
+      all: scopedDueCards.length + aheadCards.length,
     };
-  }, [scopedDueCards, scopedCards, dueIdSet]);
+  }, [scopedDueCards.length, aheadCards.length]);
 
   const candidateCards = useMemo(() => {
     if (studyScope === 'due') return scopedDueCards;
-    if (studyScope === 'ahead') return scopedCards.filter((c) => !dueIdSet.has(c.id));
-    return scopedCards;
-  }, [studyScope, scopedDueCards, scopedCards, dueIdSet]);
+    if (studyScope === 'ahead') return aheadCards;
+    return allCards;
+  }, [studyScope, scopedDueCards, aheadCards, allCards]);
 
   const grading = useRef(false);
   const [revealReady, setRevealReady] = useState(false);
@@ -114,12 +163,38 @@ export function StudyConsole() {
   const [completedCount, setCompletedCount] = useState(0);
   const [startTime, setStartTime] = useState<number>(Date.now());
 
-  // Initialize queue based on candidateCards
+  // Track session configuration to know when to start or reinitialize a session
+  const lastSessionConfigRef = useRef<string>('');
+  const currentSessionConfig = `${studyScope}::${selectedTopicGroup}::${selectedDeckId}`;
+
+  const initSession = useCallback(
+    (scope: StudyScope = studyScope) => {
+      let nextCards: Card[];
+      if (scope === 'due') nextCards = scopedDueCards;
+      else if (scope === 'ahead') nextCards = aheadCards;
+      else nextCards = allCards;
+
+      setQueue(nextCards);
+      setCurrentIndex(0);
+      setIsFlipped(false);
+      setCompletedCount(0);
+      setTypedInput('');
+      setTypedSubmitted(false);
+      setSelectedOption(null);
+      setStartTime(Date.now());
+      lastSessionConfigRef.current = `${scope}::${selectedTopicGroup}::${selectedDeckId}`;
+    },
+    [studyScope, scopedDueCards, aheadCards, allCards, selectedTopicGroup, selectedDeckId]
+  );
+
+  // Whenever studyScope, topic group, or deck selection changes, initialize fresh session
   useEffect(() => {
-    setQueue(candidateCards);
-    setCurrentIndex(0);
-    setIsFlipped(false);
-  }, [candidateCards]);
+    if (lastSessionConfigRef.current !== currentSessionConfig) {
+      initSession(studyScope);
+    } else if (queue.length === 0 && candidateCards.length > 0) {
+      initSession(studyScope);
+    }
+  }, [currentSessionConfig, studyScope, queue.length, candidateCards.length, initSession]);
 
   const currentCard = queue[currentIndex] || null;
   const currentVocab: VocabItem | undefined = useMemo(() => {
@@ -194,9 +269,9 @@ export function StudyConsole() {
     }
   }, [isFlipped, settings.autoPronounce, currentVocab, settings.englishDialect]);
 
-  // Grade action (FSRS rating 1-4) with Optimistic UI for zero latency
+  // Grade action (FSRS rating 1-4) awaiting response confirmation
   const handleGrade = useCallback(
-    (rating: FSRSRating) => {
+    async (rating: FSRSRating) => {
       if (!currentCard || !revealReady || grading.current) return;
       grading.current = true;
       setIsGrading(true);
@@ -204,32 +279,31 @@ export function StudyConsole() {
       const durationMs = Date.now() - startTime;
       const cardToGrade = currentCard;
 
-      // 1. Optimistic UI update: Advance card immediately with zero delay (0ms)
-      setCompletedCount((prev) => prev + 1);
-      setSlideDirection(1);
-      setIsFlipped(false);
-      setTypedInput('');
-      setTypedSubmitted(false);
-      setSelectedOption(null);
-      setStartTime(Date.now());
+      try {
+        // Await server response (res) before advancing card
+        await gradeCard(cardToGrade.id, rating, durationMs);
 
-      if (currentIndex < queue.length - 1) {
-        setCurrentIndex((prev) => prev + 1);
-      } else {
-        setCurrentIndex(queue.length);
-        triggerConfetti();
-        void refresh().catch(() => {});
+        setCompletedCount((prev) => prev + 1);
+        setSlideDirection(1);
+        setIsFlipped(false);
+        setTypedInput('');
+        setTypedSubmitted(false);
+        setSelectedOption(null);
+        setStartTime(Date.now());
+
+        if (currentIndex < queue.length - 1) {
+          setCurrentIndex((prev) => prev + 1);
+        } else {
+          setCurrentIndex(queue.length);
+          triggerConfetti();
+          void refresh().catch(() => {});
+        }
+      } catch (err) {
+        notify.error('Lỗi đồng bộ ôn tập', (err as Error).message || 'Không thể lưu lượt ôn lên máy chủ.');
+      } finally {
+        grading.current = false;
+        setIsGrading(false);
       }
-
-      // 2. Dispatch grade in the background asynchronously
-      gradeCard(cardToGrade.id, rating, durationMs)
-        .catch((err) => {
-          notify.error('Lỗi đồng bộ ôn tập', (err as Error).message || 'Không thể lưu lượt ôn lên máy chủ.');
-        })
-        .finally(() => {
-          grading.current = false;
-          setIsGrading(false);
-        });
     },
     [currentCard, revealReady, startTime, gradeCard, currentIndex, queue.length, refresh, notify]
   );
@@ -414,9 +488,7 @@ export function StudyConsole() {
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={() => {
-                setCurrentIndex(0);
-                setIsFlipped(false);
-                setCompletedCount(0);
+                initSession(studyScope);
               }}
               className="px-5 py-3 bg-slate-700 text-white hover:bg-slate-800 font-semibold text-xs rounded-control transition-colors shadow-md flex items-center gap-2"
             >

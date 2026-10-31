@@ -261,7 +261,7 @@ async function seed() {
 
   // 1. Ensure author user
   const email = 'editorial@vocelune.com';
-  let author = await db.user.findUnique({ where: { email } });
+  let author = await db.user.findUnique({ where: { email }, include: { settings: true } });
   if (!author) {
     author = await db.user.create({
       data: {
@@ -269,8 +269,14 @@ async function seed() {
         displayName: 'Ban Biên Tập Vocelune',
         passwordHash: await passwordHash('VoceluneOfficial2026!'),
         role: 'admin',
-        settings: { create: {} },
+        settings: {
+          create: {
+            emailReminderStudy: false,
+            emailDailySummary: false,
+          },
+        },
       },
+      include: { settings: true },
     });
     await db.schedulerConfig.create({
       data: {
@@ -282,7 +288,23 @@ async function seed() {
         parameters: json(parameters(0.9)),
       },
     });
+  } else {
+    await db.userSettings.upsert({
+      where: { userId: author.id },
+      create: {
+        userId: author.id,
+        emailReminderStudy: false,
+        emailDailySummary: false,
+      },
+      update: {
+        emailReminderStudy: false,
+        emailDailySummary: false,
+      },
+    });
   }
+
+  // Editorial account does not study; purge any orphaned cards that trigger reminders
+  await db.card.deleteMany({ where: { userId: author.id } }).catch(() => {});
 
   const scheduler = await db.schedulerConfig.findFirstOrThrow({
     where: { userId: author.id },
@@ -372,12 +394,6 @@ async function seed() {
             cefr: w.cefr,
             cefrSource: 'verified_3000',
             tags: [normalized(deckData.topicGroup), normalized(w.partOfSpeech)],
-            cards: {
-              create: [
-                { userId: author.id, template: 'en_vi', schedulerConfigId: scheduler.id },
-                { userId: author.id, template: 'vi_en', schedulerConfigId: scheduler.id },
-              ],
-            },
           },
         });
       }

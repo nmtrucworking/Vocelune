@@ -1,7 +1,22 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Search, Sparkles, Volume2, Check, Info, Wand2, Loader2 } from 'lucide-react';
+import {
+  X,
+  Search,
+  Sparkles,
+  Volume2,
+  Check,
+  Info,
+  Wand2,
+  Loader2,
+  Image as ImageIcon,
+  Upload,
+  Globe,
+  Trash2,
+  Crop,
+  RotateCcw,
+} from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { useNotification } from '@/context/NotificationContext';
 import { PartOfSpeech, CEFRLevel, Dialect, VocabItem } from '@/types';
@@ -12,10 +27,11 @@ import { DictionarySourceSelect } from '../dictionary/DictionarySourceSelect';
 import { DictionaryAttribution } from '../dictionary/DictionaryAttribution';
 import { speakWord } from '@/lib/speech';
 import { LexicalMetadataView } from '../dictionary/LexicalMetadataView';
+import { ImageCropModal } from '../common/ImageCropModal';
 
 interface QuickAddModalProps { isOpen: boolean; onClose: () => void }
 export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
-  const { decks, addVocabItem, settings, refresh } = useVocelune();
+  const { decks, addVocabItem, settings, refresh, uploadVocabImage } = useVocelune();
   const { notify } = useNotification();
   const { providers, error: providerError } = useDictionaryProviders(isOpen);
   const [word, setWord] = useState('');
@@ -41,8 +57,22 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
   const [includeProviderContent, setIncludeProviderContent] = useState(false);
   const [lookupMessage, setLookupMessage] = useState('');
   const [lookupNoticeType, setLookupNoticeType] = useState<'info' | 'warning'>('info');
+
+  // Image attachment & search states
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [isCropOpen, setIsCropOpen] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [showImageSearchModal, setShowImageSearchModal] = useState(false);
+  const [imageSearchQuery, setImageSearchQuery] = useState('');
+  const [isSearchingOnlineImages, setIsSearchingOnlineImages] = useState(false);
+  const [onlineImageResults, setOnlineImageResults] = useState<{ id: string; title: string; thumbUrl: string; fullUrl: string }[]>([]);
+  const [isLoadingSelectedImage, setIsLoadingSelectedImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const request = useRef<{ sequence: number; controller?: AbortController }>({ sequence: 0 });
   const meaningTranslation = useRef(0), exampleTranslation = useRef(0);
+
   useEffect(() => {
     if (isOpen) {
       setSource(settings.dictionaryProvider || 'free_dictionary');
@@ -56,6 +86,12 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
       setMeaningAlternatives([]);
       setIsTranslatingMeaning(false);
       setIsTranslatingExample(false);
+      setImageSrc(null);
+      setCropSrc(null);
+      setIsCropOpen(false);
+      setImageError(null);
+      setShowImageSearchModal(false);
+      setOnlineImageResults([]);
     }
     return () => { request.current.controller?.abort(); request.current.sequence++; meaningTranslation.current++; exampleTranslation.current++; };
   }, [isOpen, settings.dictionaryProvider, settings.dictionaryFallbackEnabled, settings.englishDialect]);
@@ -208,6 +244,76 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
     } else setIsTranslatingMeaning(false);
   };
   const handleSpeak = () => { if (word) speakWord(word, dialect); };
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setImageError('Chỉ hỗ trợ định dạng PNG, JPEG hoặc WebP.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError('Kích thước ảnh tối đa là 5MB.');
+      return;
+    }
+    setImageError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropSrc(reader.result as string);
+      setIsCropOpen(true);
+    };
+    reader.readAsDataURL(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleOpenImageSearch = (initialQuery?: string) => {
+    const q = initialQuery || word.trim();
+    setImageSearchQuery(q);
+    setShowImageSearchModal(true);
+    if (q) {
+      void performOnlineImageSearch(q);
+    }
+  };
+
+  const performOnlineImageSearch = async (queryText: string) => {
+    const q = queryText.trim();
+    if (!q) return;
+    setIsSearchingOnlineImages(true);
+    setImageError(null);
+    try {
+      const res = await api<{ id: string; title: string; thumbUrl: string; fullUrl: string }[]>(`/media/search-images?q=${encodeURIComponent(q)}`);
+      setOnlineImageResults(res || []);
+    } catch {
+      setImageError('Không thể tìm kiếm ảnh trực tuyến lúc này.');
+    } finally {
+      setIsSearchingOnlineImages(false);
+    }
+  };
+
+  const handleSelectOnlineImage = async (img: { thumbUrl: string; fullUrl: string }) => {
+    setIsLoadingSelectedImage(true);
+    setImageError(null);
+    try {
+      const res = await post<{ dataUrl: string }>('/media/fetch-url', { url: img.fullUrl });
+      if (res?.dataUrl) {
+        setCropSrc(res.dataUrl);
+        setIsCropOpen(true);
+        setShowImageSearchModal(false);
+      }
+    } catch (err: any) {
+      setImageError(err?.message || 'Không thể tải ảnh này về.');
+    } finally {
+      setIsLoadingSelectedImage(false);
+    }
+  };
+
+  const handleCropComplete = (croppedDataUrl: string) => {
+    setImageSrc(croppedDataUrl);
+    setIsCropOpen(false);
+    setCropSrc(null);
+    setImageError(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!word.trim() || !meaningVi.trim() || saving || isSearching) return;
@@ -215,12 +321,24 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
     try {
       const ownedFields = { phonetic: phonetic.trim(), definitionEn: definitionEn.trim(), exampleEn: exampleEn.trim(), exampleVi: exampleVi.trim() };
       const common = { meaningVi: meaningVi.trim(), deckId: deckId || decks[0]?.id, tags: tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean), notes: notes.trim(), cefr, cefrSource: cefr === 'unknown' ? 'unknown' as const : 'manual' as const };
+      
+      let createdVocab: VocabItem;
       if (includeProviderContent && selected && result) {
-        await post<VocabItem>('/dictionary/vocabulary', { ...result.query, provider: selected.provider || result.provider, strategy: source === 'auto' ? 'auto_enrich' : 'manual', providerEntryRef: selected.entryRef, providerSenseRef: selected.providerSenseRef, ...common, manualFields: ownedFields });
+        createdVocab = await post<VocabItem>('/dictionary/vocabulary', { ...result.query, provider: selected.provider || result.provider, strategy: source === 'auto' ? 'auto_enrich' : 'manual', providerEntryRef: selected.entryRef, providerSenseRef: selected.providerSenseRef, ...common, manualFields: ownedFields });
         void refresh().catch(() => {});
       } else {
-        await addVocabItem({ word: word.trim(), partOfSpeech: pos, dialect, ...ownedFields, ...common, deckId: common.deckId || '' });
+        createdVocab = await addVocabItem({ word: word.trim(), partOfSpeech: pos, dialect, ...ownedFields, ...common, deckId: common.deckId || '' });
       }
+
+      // Attach image if provided
+      if (imageSrc && createdVocab?.id) {
+        try {
+          await uploadVocabImage(createdVocab.id, imageSrc);
+        } catch (imgErr: any) {
+          notify.warning('Thẻ đã lưu', 'Ảnh minh họa chưa được gắn do lỗi tải ảnh: ' + (imgErr?.message || ''));
+        }
+      }
+
       notify.success('Đã thêm thẻ mới!', `Từ "${word}" (${pos}) đã được đưa vào kho học FSRS.`);
       invalidateLookup();
       setWord('');
@@ -231,6 +349,10 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
       setPhonetic('');
       setCefr('unknown');
       setNotes('');
+      setImageSrc(null);
+      setCropSrc(null);
+      setIsCropOpen(false);
+      setImageError(null);
       if (!keepOpen) {
         onClose();
       }
@@ -580,6 +702,104 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
             </div>
           </div>
 
+          {/* Illustration Image Section */}
+          <div className="space-y-2 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-brand-ink uppercase tracking-wide flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-brand-primary" />
+                <span>Ảnh minh họa cho thẻ học (FSRS)</span>
+              </label>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleOpenImageSearch()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-primary bg-brand-primarySoft hover:bg-brand-primarySoft/80 rounded-control transition-colors cursor-pointer"
+                  title="Tìm kiếm ảnh minh họa trên kho ảnh Commons"
+                >
+                  <Globe className="w-3 h-3" />
+                  <span>Tìm ảnh online</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-control transition-colors cursor-pointer"
+                  title="Tải ảnh PNG, JPEG, WebP từ máy tính"
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>Tải từ máy</span>
+                </button>
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={handleImageFileChange}
+                />
+              </div>
+            </div>
+
+            {imageError && (
+              <p className="text-[11px] text-rose-600 bg-rose-50 px-2.5 py-1 rounded-md">{imageError}</p>
+            )}
+
+            {imageSrc ? (
+              <div className="flex items-center gap-3 p-3 bg-surface-subtle border border-slate-200 rounded-xl">
+                <img
+                  src={imageSrc}
+                  alt="Ảnh minh họa"
+                  className="w-20 h-20 rounded-lg object-cover border border-slate-200 shrink-0 bg-white"
+                />
+                <div className="flex-1 min-w-0 space-y-1">
+                  <p className="text-xs font-semibold text-brand-ink truncate">Ảnh đã sẵn sàng gắn vào thẻ học</p>
+                  <p className="text-[11px] text-text-secondary">Ảnh sẽ được lưu và hiển thị trực quan khi học Flashcard.</p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCropSrc(imageSrc);
+                        setIsCropOpen(true);
+                      }}
+                      className="text-[11px] font-semibold text-brand-primary hover:underline inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <Crop className="w-3 h-3" />
+                      Cắt lại ảnh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageSrc(null)}
+                      className="text-[11px] font-semibold text-rose-600 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Gỡ ảnh
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center justify-between p-3 border border-dashed border-slate-200 hover:border-brand-primary bg-slate-50/50 hover:bg-brand-canvas rounded-xl cursor-pointer transition-colors group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 group-hover:bg-brand-primarySoft text-slate-400 group-hover:text-brand-primary flex items-center justify-center transition-colors">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-slate-700 group-hover:text-brand-ink">
+                      Chưa có ảnh minh họa
+                    </p>
+                    <p className="text-[10.5px] text-slate-400">
+                      Bấm để tải từ máy hoặc dùng nút <strong>Tìm ảnh online</strong> ở góc phải
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Deck & Tags */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -640,6 +860,122 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
           </div>
         </form>
       </div>
+
+      {/* Online Image Search Modal */}
+      {showImageSearchModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-brand-primary" />
+                <span className="font-bold text-sm text-brand-ink">Tìm kiếm ảnh minh họa trực tuyến</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImageSearchModal(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search input */}
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void performOnlineImageSearch(imageSearchQuery);
+                }}
+                className="flex gap-2"
+              >
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Nhập từ khóa tìm ảnh (VD: apple, tree, smiling, runner...)"
+                    value={imageSearchQuery}
+                    onChange={(e) => setImageSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSearchingOnlineImages || !imageSearchQuery.trim()}
+                  className="px-4 py-2 bg-brand-primary text-white text-xs font-semibold rounded-control hover:bg-brand-primaryHover disabled:opacity-50 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  {isSearchingOnlineImages ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  <span>{isSearchingOnlineImages ? 'Đang tìm...' : 'Tìm ảnh'}</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Results Grid */}
+            <div className="p-4 flex-1 overflow-y-auto min-h-[220px]">
+              {isLoadingSelectedImage && (
+                <div className="py-12 flex flex-col items-center justify-center space-y-2 text-brand-primary">
+                  <Loader2 className="w-7 h-7 animate-spin" />
+                  <span className="text-xs font-medium text-slate-600">Đang tải và chuẩn bị ảnh để cắt...</span>
+                </div>
+              )}
+
+              {!isLoadingSelectedImage && isSearchingOnlineImages && (
+                <div className="py-12 flex flex-col items-center justify-center space-y-2 text-brand-primary">
+                  <Loader2 className="w-7 h-7 animate-spin" />
+                  <span className="text-xs font-medium text-slate-600">Đang tìm kiếm kho ảnh trực tuyến...</span>
+                </div>
+              )}
+
+              {!isLoadingSelectedImage && !isSearchingOnlineImages && onlineImageResults.length === 0 && (
+                <div className="py-12 text-center text-text-secondary text-xs">
+                  <ImageIcon className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p>Không tìm thấy ảnh phù hợp cho từ khóa này.</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Hãy thử nhập từ khóa tiếng Anh đơn giản hơn.</p>
+                </div>
+              )}
+
+              {!isLoadingSelectedImage && !isSearchingOnlineImages && onlineImageResults.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {onlineImageResults.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => void handleSelectOnlineImage(item)}
+                      className="group flex flex-col border border-slate-200 rounded-xl overflow-hidden hover:border-brand-primary hover:shadow-sm transition-all text-left bg-white cursor-pointer"
+                    >
+                      <div className="aspect-square w-full bg-slate-100 overflow-hidden relative">
+                        <img
+                          src={item.thumbUrl}
+                          alt={item.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          loading="lazy"
+                        />
+                      </div>
+                      <div className="p-2">
+                        <p className="text-[11px] font-medium text-slate-700 truncate group-hover:text-brand-primary">
+                          {item.title}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Crop Modal */}
+      <ImageCropModal
+        isOpen={isCropOpen}
+        imageSrc={cropSrc}
+        onClose={() => {
+          setIsCropOpen(false);
+          setCropSrc(null);
+        }}
+        onComplete={handleCropComplete}
+        initialAspectRatio={1}
+        title="Cắt ảnh minh họa từ vựng"
+      />
     </div>
   );
 }

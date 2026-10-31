@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
@@ -15,6 +15,11 @@ export class IntegrationsController {
   @Post('dictionary/estimate-cefr') @Throttle({ default: { limit: 60, ttl: 60000 } }) estimateCefr(@Req() r: AuthRequest, @Body() b: unknown) { return this.dictionary.estimateCefr(r.auth.userId, b); }
   @Post('dictionary/translate') @Throttle({ default: { limit: 60, ttl: 60000 } }) translate(@Req() r: AuthRequest, @Body() b: unknown) { return this.dictionary.translate(r.auth.userId, b); }
   @Post('dictionary/vocabulary') @Throttle({ default: { limit: 20, ttl: 60000 } }) save(@Req() r: AuthRequest, @Body() b: unknown) { return this.dictionary.saveLicensed(r.auth.userId, b); }
+  @Get('media/search-images') @Throttle({ default: { limit: 60, ttl: 60000 } }) searchImages(@Req() r: AuthRequest, @Query('q') query?: string) { return this.media.searchImages(query || ''); }
+  @Post('media/fetch-url') @Throttle({ default: { limit: 30, ttl: 60000 } }) fetchImageAsDataUrl(@Req() r: AuthRequest, @Body() b: { url: string }) {
+    if (!b?.url || typeof b.url !== 'string') fail(422, 'URL_REQUIRED', 'Thiếu đường dẫn URL ảnh.');
+    return this.media.fetchImageAsDataUrl(b.url);
+  }
   @Post('media/upload-intents') intent(@Req() r: AuthRequest, @Body() b: unknown) { return this.media.intent(r.auth.userId, b); }
   @Post('media/:id/complete') complete(@Req() r: AuthRequest, @Param('id') a: string) { return this.media.complete(r.auth.userId, id(a)); }
   @Get('media/:id/access') access(@Req() r: AuthRequest, @Param('id') a: string) { return this.media.access(r.auth.userId, id(a)); }

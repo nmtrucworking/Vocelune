@@ -57,15 +57,25 @@ export class IdentityService {
             to: user.email,
             subject: email.subject,
             text: encryptEmail(payload),
+            status: 'pending',
           },
-        }).then(() => {
+        }).then(outbox => {
           setImmediate(() => {
             void sendEmailDirect({
               to: user.email,
               subject: email.subject,
               text: email.text,
               html: email.html,
+            }).then(() => {
+              void this.db.emailOutbox.update({
+                where: { id: outbox.id },
+                data: { status: 'sent', sentAt: new Date(), text: '', lockedAt: null },
+              }).catch(() => {});
             }).catch(err => {
+              void this.db.emailOutbox.update({
+                where: { id: outbox.id },
+                data: { status: 'failed', lockedAt: null },
+              }).catch(() => {});
               process.stderr.write(`Welcome email dispatch error: ${(err as Error).message}\n`);
             });
           });

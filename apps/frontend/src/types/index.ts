@@ -90,6 +90,7 @@ export interface Card {
   lapses: number;
   version: number;
   suspended?: boolean;
+  buriedUntil?: string | null;
   learningSteps?: number;
 }
 

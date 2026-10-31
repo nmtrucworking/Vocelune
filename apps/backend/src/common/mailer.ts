@@ -48,8 +48,31 @@ function sanitizeResendFrom(raw?: string): string {
 }
 
 export async function sendEmailDirect(options: SendMailOptions): Promise<{ success: boolean; messageId?: string }> {
+  const recipient = options.to.trim().toLowerCase();
+  if (
+    recipient === 'editorial@vocelune.com' ||
+    recipient.endsWith('@vocelune.com') ||
+    recipient.endsWith('@vocelune.local') ||
+    recipient.endsWith('@example.com')
+  ) {
+    logger.log(`[Bypass] Skipped email dispatch to internal/non-routable address: ${options.to}`);
+    return { success: true, messageId: 'internal-bypassed' };
+  }
+
+  if (process.env.NODE_ENV === 'test' && !process.env.FORCE_SMTP) {
+    logger.log(`[Test Mock] Email dispatch simulated for ${options.to} (Subject: "${options.subject}")`);
+    return { success: true, messageId: 'test-mock-msg-id' };
+  }
+
   const rawKey = config.RESEND_API_KEY || (config.SMTP_PASSWORD?.startsWith('re_') ? config.SMTP_PASSWORD : undefined) || process.env.RESEND_API_KEY;
   const resendApiKey = rawKey ? rawKey.trim() : undefined;
+
+  const appOrigin = (config.APP_ORIGIN || 'https://vocelune.nguyenminhtruc.site').replace(/\/+$/, '');
+  const emailHeaders = {
+    'List-Unsubscribe': `<${appOrigin}/profile>`,
+    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    'X-Auto-Response-Suppress': 'OOF, AutoReply',
+  };
 
   // 1. Resend REST API Mode (Preferred if Resend key is provided)
   if (resendApiKey) {
@@ -64,6 +87,7 @@ export async function sendEmailDirect(options: SendMailOptions): Promise<{ succe
         to: [options.to],
         subject: options.subject,
         text: options.text,
+        headers: emailHeaders,
       };
       if (options.html) payload.html = options.html;
 
@@ -127,6 +151,7 @@ export async function sendEmailDirect(options: SendMailOptions): Promise<{ succe
         subject: options.subject,
         text: options.text,
         html: options.html,
+        headers: emailHeaders,
       });
 
       logger.log(`Email sent via SMTP successfully! Message ID: ${info.messageId}`);

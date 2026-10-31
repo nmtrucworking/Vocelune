@@ -22,6 +22,12 @@ import {
   X,
   CheckSquare,
   Square,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
+  SlidersHorizontal,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { VocabItem, PartOfSpeech, CEFRLevel } from '@/types';
@@ -50,12 +56,17 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
   const [batchTargetDeckId, setBatchTargetDeckId] = useState('');
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
-  // Filters
+  // Filters & Sorting
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTopicGroup, setSelectedTopicGroup] = useState<string>('all');
   const [selectedDeckId, setSelectedDeckId] = useState<string>('all');
   const [selectedCefr, setSelectedCefr] = useState<string>('all');
   const [selectedPos, setSelectedPos] = useState<string>('all');
+  const [selectedStatus, setSelectedStatus] = useState<string>('all'); // 'all' | 'due' | 'new' | 'learning' | 'review' | 'suspended'
+  const [selectedHasImage, setSelectedHasImage] = useState<string>('all'); // 'all' | 'has_image' | 'no_image'
+  const [selectedSourceKind, setSelectedSourceKind] = useState<string>('all'); // 'all' | 'user' | 'import' | 'fork'
+  const [sortBy, setSortBy] = useState<string>('created_desc');
+  // 'created_desc' | 'created_asc' | 'word_asc' | 'word_desc' | 'due_asc' | 'due_desc' | 'stability_asc' | 'stability_desc' | 'difficulty_desc' | 'reps_desc'
 
   // Pagination for vocabulary table
   const [vocabPage, setVocabPage] = useState(1);
@@ -73,6 +84,21 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
     return new Map(decks.map((d) => [d.id, d]));
   }, [decks]);
 
+  // Map cards by vocabItemId
+  const cardMap = useMemo(() => {
+    return new Map(cards.map((c) => [c.vocabItemId, c]));
+  }, [cards]);
+
+  // Map review logs by cardId
+  const cardLogsMap = useMemo(() => {
+    const map = new Map<string, typeof reviewLogs>();
+    for (const log of reviewLogs) {
+      if (!map.has(log.cardId)) map.set(log.cardId, []);
+      map.get(log.cardId)!.push(log);
+    }
+    return map;
+  }, [reviewLogs]);
+
   // Available topic groups in user decks
   const availableTopicGroups = useMemo(() => {
     const set = new Set<string>();
@@ -86,9 +112,53 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
     return decks.filter((d) => (d.topicGroup || 'Chung') === selectedTopicGroup);
   }, [decks, selectedTopicGroup]);
 
-  // Filtered items
+  // Active filters count
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery.trim()) count++;
+    if (selectedTopicGroup !== 'all') count++;
+    if (selectedDeckId !== 'all') count++;
+    if (selectedCefr !== 'all') count++;
+    if (selectedPos !== 'all') count++;
+    if (selectedStatus !== 'all') count++;
+    if (selectedHasImage !== 'all') count++;
+    if (selectedSourceKind !== 'all') count++;
+    if (sortBy !== 'created_desc') count++;
+    return count;
+  }, [searchQuery, selectedTopicGroup, selectedDeckId, selectedCefr, selectedPos, selectedStatus, selectedHasImage, selectedSourceKind, sortBy]);
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setSelectedTopicGroup('all');
+    setSelectedDeckId('all');
+    setSelectedCefr('all');
+    setSelectedPos('all');
+    setSelectedStatus('all');
+    setSelectedHasImage('all');
+    setSelectedSourceKind('all');
+    setSortBy('created_desc');
+    setVocabPage(1);
+  };
+
+  const handleToggleSort = (field: 'word' | 'due' | 'created' | 'stability' | 'difficulty') => {
+    setVocabPage(1);
+    if (field === 'word') {
+      setSortBy((prev) => (prev === 'word_asc' ? 'word_desc' : 'word_asc'));
+    } else if (field === 'due') {
+      setSortBy((prev) => (prev === 'due_asc' ? 'due_desc' : 'due_asc'));
+    } else if (field === 'created') {
+      setSortBy((prev) => (prev === 'created_desc' ? 'created_asc' : 'created_desc'));
+    } else if (field === 'stability') {
+      setSortBy((prev) => (prev === 'stability_asc' ? 'stability_desc' : 'stability_asc'));
+    } else if (field === 'difficulty') {
+      setSortBy((prev) => (prev === 'difficulty_desc' ? 'reps_desc' : 'difficulty_desc'));
+    }
+  };
+
+  // Filtered and sorted items
   const filteredVocab = useMemo(() => {
-    return vocabItems.filter((item) => {
+    const now = Date.now();
+    const result = vocabItems.filter((item) => {
       // Search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -124,24 +194,104 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
         return false;
       }
 
+      // FSRS Card Status filter
+      if (selectedStatus !== 'all') {
+        const card = cardMap.get(item.id);
+        if (!card) return false;
+        if (selectedStatus === 'due') {
+          if (card.suspended || new Date(card.dueAt).getTime() > now) return false;
+        } else if (selectedStatus === 'new') {
+          if (card.state !== 'new') return false;
+        } else if (selectedStatus === 'learning') {
+          if (!['learning', 'relearning'].includes(card.state)) return false;
+        } else if (selectedStatus === 'review') {
+          if (card.state !== 'review') return false;
+        } else if (selectedStatus === 'suspended') {
+          if (!card.suspended) return false;
+        }
+      }
+
+      // Image filter
+      if (selectedHasImage !== 'all') {
+        if (selectedHasImage === 'has_image' && !item.imageUrl) return false;
+        if (selectedHasImage === 'no_image' && item.imageUrl) return false;
+      }
+
+      // Source Kind filter
+      if (selectedSourceKind !== 'all') {
+        const source = item.sourceKind || 'user';
+        if (selectedSourceKind !== source) return false;
+      }
+
       return true;
     });
-  }, [vocabItems, searchQuery, selectedTopicGroup, selectedDeckId, selectedCefr, selectedPos, deckMap]);
 
-  // Map cards by vocabItemId
-  const cardMap = useMemo(() => {
-    return new Map(cards.map((c) => [c.vocabItemId, c]));
-  }, [cards]);
+    // Sort order
+    result.sort((a, b) => {
+      if (sortBy === 'word_asc') {
+        return a.word.localeCompare(b.word);
+      }
+      if (sortBy === 'word_desc') {
+        return b.word.localeCompare(a.word);
+      }
+      if (sortBy === 'created_asc') {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+      if (sortBy === 'created_desc') {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+      if (sortBy === 'due_asc') {
+        const cardA = cardMap.get(a.id);
+        const cardB = cardMap.get(b.id);
+        const timeA = cardA?.dueAt ? new Date(cardA.dueAt).getTime() : Infinity;
+        const timeB = cardB?.dueAt ? new Date(cardB.dueAt).getTime() : Infinity;
+        return timeA - timeB;
+      }
+      if (sortBy === 'due_desc') {
+        const cardA = cardMap.get(a.id);
+        const cardB = cardMap.get(b.id);
+        const timeA = cardA?.dueAt ? new Date(cardA.dueAt).getTime() : -Infinity;
+        const timeB = cardB?.dueAt ? new Date(cardB.dueAt).getTime() : -Infinity;
+        return timeB - timeA;
+      }
+      if (sortBy === 'stability_asc') {
+        const sA = cardMap.get(a.id)?.stability ?? 0;
+        const sB = cardMap.get(b.id)?.stability ?? 0;
+        return sA - sB;
+      }
+      if (sortBy === 'stability_desc') {
+        const sA = cardMap.get(a.id)?.stability ?? 0;
+        const sB = cardMap.get(b.id)?.stability ?? 0;
+        return sB - sA;
+      }
+      if (sortBy === 'difficulty_desc') {
+        const dA = cardMap.get(a.id)?.difficulty ?? 0;
+        const dB = cardMap.get(b.id)?.difficulty ?? 0;
+        return dB - dA;
+      }
+      if (sortBy === 'reps_desc') {
+        const rA = cardMap.get(a.id)?.reps ?? 0;
+        const rB = cardMap.get(b.id)?.reps ?? 0;
+        return rB - rA;
+      }
+      return 0;
+    });
 
-  // Map review logs by cardId
-  const cardLogsMap = useMemo(() => {
-    const map = new Map<string, typeof reviewLogs>();
-    for (const log of reviewLogs) {
-      if (!map.has(log.cardId)) map.set(log.cardId, []);
-      map.get(log.cardId)!.push(log);
-    }
-    return map;
-  }, [reviewLogs]);
+    return result;
+  }, [
+    vocabItems,
+    searchQuery,
+    selectedTopicGroup,
+    selectedDeckId,
+    selectedCefr,
+    selectedPos,
+    selectedStatus,
+    selectedHasImage,
+    selectedSourceKind,
+    sortBy,
+    deckMap,
+    cardMap,
+  ]);
 
   // Paginated vocabulary items
   const totalVocabPages = Math.max(1, Math.ceil(filteredVocab.length / vocabPageSize));
@@ -307,9 +457,10 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
 
           {/* Filter and Search Bar */}
           <div className="bg-surface-base border border-slate-200/80 rounded-card p-4 shadow-xs space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Top Row: Search, Topics, Decks, Sort */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               {/* Search Box */}
-              <div className="relative lg:col-span-1">
+              <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
@@ -319,8 +470,20 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                     setSearchQuery(e.target.value);
                     setVocabPage(1);
                   }}
-                  className="w-full pl-9 pr-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
+                  className="w-full pl-9 pr-7 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
                 />
+                {searchQuery && (
+                  <button
+                    onClick={() => {
+                      setSearchQuery('');
+                      setVocabPage(1);
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    title="Xóa tìm kiếm"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {/* Topic Group Filter */}
@@ -360,6 +523,54 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                 ))}
               </select>
 
+              {/* Primary Sort Selector */}
+              <div className="relative">
+                <select
+                  value={sortBy}
+                  onChange={(e) => {
+                    setSortBy(e.target.value);
+                    setVocabPage(1);
+                  }}
+                  className="w-full pl-8 pr-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary font-medium text-brand-ink"
+                >
+                  <option value="created_desc">Mới thêm gần đây</option>
+                  <option value="created_asc">Thêm trước đó (Cũ nhất)</option>
+                  <option value="word_asc">Từ vựng (A → Z)</option>
+                  <option value="word_desc">Từ vựng (Z → A)</option>
+                  <option value="due_asc">Đến hạn ôn sớm nhất (Ưu tiên FSRS)</option>
+                  <option value="due_desc">Đến hạn ôn muộn nhất</option>
+                  <option value="stability_asc">Độ nhớ yếu nhất (Cần học)</option>
+                  <option value="stability_desc">Độ nhớ vững nhất</option>
+                  <option value="difficulty_desc">Độ khó cao nhất</option>
+                  <option value="reps_desc">Ôn nhiều lượt nhất</option>
+                </select>
+                <ArrowUpDown className="w-3.5 h-3.5 text-brand-primary absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+            </div>
+
+            {/* Second Row: Detailed Filters (FSRS Status, CEFR, POS, Image, Source) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 pt-0.5">
+              {/* FSRS Card Status Filter */}
+              <select
+                value={selectedStatus}
+                onChange={(e) => {
+                  setSelectedStatus(e.target.value);
+                  setVocabPage(1);
+                }}
+                className={`w-full px-2.5 py-1.5 text-xs rounded-control border transition-colors ${
+                  selectedStatus !== 'all'
+                    ? 'border-brand-primary bg-brand-primarySoft/30 text-brand-primary font-semibold'
+                    : 'border-slate-200 bg-surface-subtle text-slate-700'
+                }`}
+              >
+                <option value="all">Trạng thái: Tất cả</option>
+                <option value="due">⏰ Đến hạn ôn tập</option>
+                <option value="new">🆕 Thẻ mới (chưa học)</option>
+                <option value="learning">🔄 Đang học (Learning)</option>
+                <option value="review">💎 Đang duy trì (Review)</option>
+                <option value="suspended">⏸️ Bị tạm dừng</option>
+              </select>
+
               {/* CEFR Level Filter */}
               <select
                 value={selectedCefr}
@@ -367,9 +578,13 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                   setSelectedCefr(e.target.value);
                   setVocabPage(1);
                 }}
-                className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary font-medium"
+                className={`w-full px-2.5 py-1.5 text-xs rounded-control border transition-colors ${
+                  selectedCefr !== 'all'
+                    ? 'border-brand-primary bg-brand-primarySoft/30 text-brand-primary font-semibold'
+                    : 'border-slate-200 bg-surface-subtle text-slate-700'
+                }`}
               >
-                <option value="all">Tất cả cấp độ CEFR</option>
+                <option value="all">CEFR: Tất cả cấp độ</option>
                 <option value="A1">A1 - Beginner</option>
                 <option value="A2">A2 - Elementary</option>
                 <option value="B1">B1 - Intermediate</option>
@@ -386,9 +601,13 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                   setSelectedPos(e.target.value);
                   setVocabPage(1);
                 }}
-                className="w-full px-3 py-2 text-xs bg-surface-subtle border border-slate-200 rounded-control focus:outline-none focus:border-brand-primary"
+                className={`w-full px-2.5 py-1.5 text-xs rounded-control border transition-colors ${
+                  selectedPos !== 'all'
+                    ? 'border-brand-primary bg-brand-primarySoft/30 text-brand-primary font-semibold'
+                    : 'border-slate-200 bg-surface-subtle text-slate-700'
+                }`}
               >
-                <option value="all">Tất cả từ loại (POS)</option>
+                <option value="all">Từ loại: Tất cả (POS)</option>
                 <option value="noun">Danh từ (noun)</option>
                 <option value="verb">Động từ (verb)</option>
                 <option value="adjective">Tính từ (adjective)</option>
@@ -397,29 +616,65 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                 <option value="idiom">Thành ngữ (idiom)</option>
                 <option value="preposition">Giới từ (preposition)</option>
               </select>
+
+              {/* Image Filter */}
+              <select
+                value={selectedHasImage}
+                onChange={(e) => {
+                  setSelectedHasImage(e.target.value);
+                  setVocabPage(1);
+                }}
+                className={`w-full px-2.5 py-1.5 text-xs rounded-control border transition-colors ${
+                  selectedHasImage !== 'all'
+                    ? 'border-brand-primary bg-brand-primarySoft/30 text-brand-primary font-semibold'
+                    : 'border-slate-200 bg-surface-subtle text-slate-700'
+                }`}
+              >
+                <option value="all">Hình ảnh: Tất cả</option>
+                <option value="has_image">🖼️ Có ảnh minh họa</option>
+                <option value="no_image">📝 Chưa có ảnh</option>
+              </select>
+
+              {/* Source Kind Filter */}
+              <select
+                value={selectedSourceKind}
+                onChange={(e) => {
+                  setSelectedSourceKind(e.target.value);
+                  setVocabPage(1);
+                }}
+                className={`w-full px-2.5 py-1.5 text-xs rounded-control border transition-colors ${
+                  selectedSourceKind !== 'all'
+                    ? 'border-brand-primary bg-brand-primarySoft/30 text-brand-primary font-semibold'
+                    : 'border-slate-200 bg-surface-subtle text-slate-700'
+                }`}
+              >
+                <option value="all">Nguồn: Tất cả</option>
+                <option value="user">✍️ Tự biên soạn</option>
+                <option value="import">📥 Nhập từ tệp</option>
+                <option value="fork">🌐 Sao chép Topic</option>
+              </select>
             </div>
 
-            {/* Quick filter summary chips */}
-            <div className="flex items-center justify-between text-xs text-text-secondary pt-1">
-              <span>
-                Hiển thị <strong>{filteredVocab.length}</strong> / {vocabItems.length} từ
-              </span>
+            {/* Quick filter summary chips & Reset Button */}
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary pt-1 border-t border-slate-100">
+              <div className="flex items-center gap-2">
+                <span>
+                  Hiển thị <strong>{filteredVocab.length}</strong> / {vocabItems.length} từ
+                </span>
 
-              {(searchQuery ||
-                selectedTopicGroup !== 'all' ||
-                selectedDeckId !== 'all' ||
-                selectedCefr !== 'all' ||
-                selectedPos !== 'all') && (
+                {activeFilterCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-brand-primarySoft text-brand-primary border border-brand-primary/20">
+                    {activeFilterCount} điều kiện lọc
+                  </span>
+                )}
+              </div>
+
+              {activeFilterCount > 0 && (
                 <button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setSelectedTopicGroup('all');
-                    setSelectedDeckId('all');
-                    setSelectedCefr('all');
-                    setSelectedPos('all');
-                  }}
-                  className="text-brand-primary hover:underline text-xs font-semibold"
+                  onClick={handleResetFilters}
+                  className="inline-flex items-center gap-1 text-rose-600 hover:text-rose-700 text-xs font-semibold hover:underline cursor-pointer"
                 >
+                  <RotateCcw className="w-3 h-3" />
                   Đặt lại tất cả bộ lọc
                 </button>
               )}
@@ -431,7 +686,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
             {filteredVocab.length > 0 ? (
               <div className="overflow-x-auto scrollbar-thin">
                 <table className="min-w-[760px] w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-text-secondary font-semibold border-b border-slate-200/80 sticky top-0 z-10 shadow-2xs">
+                  <thead className="bg-slate-50 text-text-secondary font-semibold border-b border-slate-200/80 sticky top-0 z-10 shadow-2xs select-none">
                     <tr>
                       <th className="py-2.5 px-2.5 w-9 text-center shrink-0">
                         <input
@@ -445,13 +700,68 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                           title="Chọn tất cả từ trên trang này"
                         />
                       </th>
-                      <th className="py-2.5 px-2.5 w-[160px]">Từ vựng & Phiên âm</th>
+
+                      {/* Sortable: Word */}
+                      <th
+                        className="py-2.5 px-2.5 w-[160px] cursor-pointer hover:bg-slate-100/70 transition-colors group/th"
+                        onClick={() => handleToggleSort('word')}
+                        title="Bấm để sắp xếp theo chữ cái A-Z hoặc Z-A"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Từ vựng & Phiên âm</span>
+                          {sortBy === 'word_asc' ? (
+                            <ArrowUp className="w-3 h-3 text-brand-primary shrink-0" />
+                          ) : sortBy === 'word_desc' ? (
+                            <ArrowDown className="w-3 h-3 text-brand-primary shrink-0" />
+                          ) : (
+                            <ArrowUpDown className="w-2.5 h-2.5 text-slate-300 group-hover/th:text-slate-500 shrink-0" />
+                          )}
+                        </div>
+                      </th>
+
                       <th className="py-2.5 px-2 w-14 text-center text-text-secondary italic">Từ loại</th>
                       <th className="py-2.5 px-2.5 min-w-[130px] max-w-[200px]">Nghĩa tiếng Việt</th>
                       <th className="py-2.5 px-2 w-[120px]">Chủ đề & Bộ từ</th>
+
+                      {/* CEFR */}
                       <th className="py-2.5 px-1.5 w-12 text-center">Cấp độ</th>
-                      <th className="py-2.5 px-2.5 w-[130px]">Trạng thái FSRS</th>
-                      <th className="py-2.5 px-2 w-16 text-center">Hạn ôn</th>
+
+                      {/* Sortable: Stability / Status */}
+                      <th
+                        className="py-2.5 px-2.5 w-[130px] cursor-pointer hover:bg-slate-100/70 transition-colors group/th"
+                        onClick={() => handleToggleSort('stability')}
+                        title="Bấm để sắp xếp theo độ nhớ FSRS"
+                      >
+                        <div className="flex items-center gap-1">
+                          <span>Trạng thái FSRS</span>
+                          {sortBy === 'stability_asc' ? (
+                            <ArrowUp className="w-3 h-3 text-brand-primary shrink-0" />
+                          ) : sortBy === 'stability_desc' ? (
+                            <ArrowDown className="w-3 h-3 text-brand-primary shrink-0" />
+                          ) : (
+                            <ArrowUpDown className="w-2.5 h-2.5 text-slate-300 group-hover/th:text-slate-500 shrink-0" />
+                          )}
+                        </div>
+                      </th>
+
+                      {/* Sortable: Due Date */}
+                      <th
+                        className="py-2.5 px-2 w-16 text-center cursor-pointer hover:bg-slate-100/70 transition-colors group/th"
+                        onClick={() => handleToggleSort('due')}
+                        title="Bấm để sắp xếp theo hạn ôn tập sớm nhất / muộn nhất"
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>Hạn ôn</span>
+                          {sortBy === 'due_asc' ? (
+                            <ArrowUp className="w-3 h-3 text-brand-primary shrink-0" />
+                          ) : sortBy === 'due_desc' ? (
+                            <ArrowDown className="w-3 h-3 text-brand-primary shrink-0" />
+                          ) : (
+                            <ArrowUpDown className="w-2.5 h-2.5 text-slate-300 group-hover/th:text-slate-500 shrink-0" />
+                          )}
+                        </div>
+                      </th>
+
                       <th className="py-2.5 px-1.5 w-11 text-center">Thao tác</th>
                     </tr>
                   </thead>

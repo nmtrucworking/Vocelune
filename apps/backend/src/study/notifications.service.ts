@@ -179,12 +179,26 @@ export class NotificationsService implements OnApplicationBootstrap, OnApplicati
     let summariesSent = 0;
 
     const users = await this.db.user.findMany({
+      where: {
+        AND: [
+          { email: { not: 'editorial@vocelune.com' } },
+          { email: { not: { endsWith: '@vocelune.com' } } },
+        ],
+      },
       include: { settings: true },
     });
 
     const appOrigin = this.getAppOrigin();
 
     for (const user of users) {
+      if (
+        user.email === 'editorial@vocelune.com' ||
+        user.email.toLowerCase().includes('editorial') ||
+        user.email.toLowerCase().endsWith('@vocelune.com')
+      ) {
+        continue;
+      }
+
       const timezone = user.settings?.timezone || 'Asia/Ho_Chi_Minh';
       let localNow: DateTime;
       try {
@@ -194,6 +208,8 @@ export class NotificationsService implements OnApplicationBootstrap, OnApplicati
       }
 
       const dateStr = localNow.toFormat('yyyy-MM-dd');
+      const dayStart = localNow.startOf('day').toJSDate();
+      const dayEnd = localNow.endOf('day').toJSDate();
 
       // 1. Check 06:00 AM window (06:00 - 06:15 local time)
       const isMorningWindow = localNow.hour === 6 && localNow.minute >= 0 && localNow.minute <= 15;
@@ -203,7 +219,12 @@ export class NotificationsService implements OnApplicationBootstrap, OnApplicati
         const existing = await this.db.emailOutbox.findFirst({
           where: {
             userId: user.id,
-            subject: { contains: `[Vocelune] ⏰ Nhắc nhở lịch học hôm nay - ${dateStr}` },
+            createdAt: { gte: dayStart, lte: dayEnd },
+            OR: [
+              { subject: { contains: 'thẻ đến hạn ôn hôm nay' } },
+              { subject: { contains: 'Kế hoạch học từ vựng hôm nay' } },
+              { subject: { contains: 'Nhắc nhở lịch học' } },
+            ],
           },
         });
 
@@ -226,17 +247,32 @@ export class NotificationsService implements OnApplicationBootstrap, OnApplicati
         const existing = await this.db.emailOutbox.findFirst({
           where: {
             userId: user.id,
-            subject: { contains: `[Vocelune] 🌙 Tổng kết kiến thức ngày ${dateStr}` },
+            createdAt: { gte: dayStart, lte: dayEnd },
+            OR: [
+              { subject: { contains: 'Tổng kết học tập' } },
+              { subject: { contains: 'Tổng kết kiến thức' } },
+              { subject: { contains: 'Tổng kết' } },
+            ],
           },
         });
 
         if (!existing) {
-          try {
-            await this.sendDailySummaryForUser(user, dateStr, appOrigin);
-            summariesSent++;
-            this.logger.log(`Queued 11:59 PM knowledge summary for user ${user.email} (${dateStr})`);
-          } catch (err) {
-            this.logger.error(`Failed to send 11:59 PM summary for ${user.email}: ${(err as Error).message}`);
+          const reviewCount = await this.db.reviewLog.count({
+            where: { userId: user.id, reviewedAt: { gte: dayStart, lte: dayEnd } },
+          });
+          const addedCount = await this.db.vocabItem.count({
+            where: { userId: user.id, createdAt: { gte: dayStart, lte: dayEnd }, deletedAt: null },
+          });
+
+          // Only send automated end-of-day summary if user had activity today
+          if (reviewCount > 0 || addedCount > 0) {
+            try {
+              await this.sendDailySummaryForUser(user, dateStr, appOrigin);
+              summariesSent++;
+              this.logger.log(`Queued 11:59 PM knowledge summary for user ${user.email} (${dateStr})`);
+            } catch (err) {
+              this.logger.error(`Failed to send 11:59 PM summary for ${user.email}: ${(err as Error).message}`);
+            }
           }
         }
       }
@@ -255,7 +291,11 @@ export class NotificationsService implements OnApplicationBootstrap, OnApplicati
     const dateStr = localNow.toFormat('yyyy-MM-dd');
     try {
       const id = await this.sendStudyReminderForUser(user, dateStr, this.getAppOrigin());
-      return { ok: true, emailId: id, subject: `[Vocelune] ⏰ Nhắc nhở lịch học hôm nay - ${dateStr}`, message: 'Đã gửi email nhắc nhở học tập thành công!' };
+      const dueCount = await this.db.card.count({
+        where: { userId: user.id, dueAt: { lte: new Date() }, suspended: false, deletedAt: null },
+      });
+      const subject = dueCount ? `Vocelune · ${dueCount} thẻ đến hạn ôn hôm nay` : 'Vocelune · Kế hoạch học từ vựng hôm nay';
+      return { ok: true, emailId: id, subject, message: 'Đã gửi email nhắc nhở học tập thành công!' };
     } catch (err) {
       this.logger.error(`Failed to trigger test reminder for ${user.email}: ${(err as Error).message}`);
       throw new HttpException((err as Error).message || 'Gửi email nhắc nhở thất bại.', 400);
@@ -272,7 +312,8 @@ export class NotificationsService implements OnApplicationBootstrap, OnApplicati
     const dateStr = localNow.toFormat('yyyy-MM-dd');
     try {
       const id = await this.sendDailySummaryForUser(user, dateStr, this.getAppOrigin());
-      return { ok: true, emailId: id, subject: `[Vocelune] 🌙 Tổng kết kiến thức ngày ${dateStr}`, message: 'Đã gửi email tổng kết kiến thức thành công!' };
+      const subject = `Vocelune · Tổng kết học tập ${dateStr}`;
+      return { ok: true, emailId: id, subject, message: 'Đã gửi email tổng kết kiến thức thành công!' };
     } catch (err) {
       this.logger.error(`Failed to trigger test summary for ${user.email}: ${(err as Error).message}`);
       throw new HttpException((err as Error).message || 'Gửi email tổng kết thất bại.', 400);

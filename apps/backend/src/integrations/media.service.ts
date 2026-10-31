@@ -139,6 +139,53 @@ export class MediaService {
       return { id: asset.id, status: 'ready' };
     });
   }
+
+  async searchImages(query: string) {
+    const q = query.trim();
+    if (!q) return [];
+    try {
+      const url = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${encodeURIComponent(q)}&gsrlimit=18&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json&origin=*`;
+      const res = await fetch(url, { headers: { 'User-Agent': 'Vocelune/1.0 (study@vocelune.com)' }, signal: AbortSignal.timeout(6000) });
+      if (!res.ok) return [];
+      const data = await res.json() as any;
+      const pages = data?.query?.pages || {};
+      const results: { id: string; title: string; thumbUrl: string; fullUrl: string }[] = [];
+      for (const key of Object.keys(pages)) {
+        const p = pages[key];
+        const info = p.imageinfo?.[0];
+        if (info && (info.thumburl || info.url)) {
+          const title = (p.title || '').replace(/^File:/, '').replace(/\.[^/.]+$/, '').replace(/_/g, ' ');
+          results.push({
+            id: String(p.pageid || key),
+            title,
+            thumbUrl: info.thumburl || info.url,
+            fullUrl: info.url || info.thumburl,
+          });
+        }
+      }
+      return results;
+    } catch {
+      return [];
+    }
+  }
+
+  async fetchImageAsDataUrl(imageUrl: string) {
+    const parsed = new URL(imageUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      fail(400, 'INVALID_URL', 'URL ảnh không hợp lệ.');
+    }
+    const res = await fetch(imageUrl, {
+      headers: { 'User-Agent': 'Vocelune/1.0 (study@vocelune.com)' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) fail(400, 'FETCH_FAILED', 'Không thể tải ảnh từ liên kết.');
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    if (buffer.length > 5 * 1024 * 1024) fail(422, 'FILE_TOO_LARGE', 'Ảnh vượt quá kích thước 5MB.');
+    return { dataUrl: `data:${contentType};base64,${buffer.toString('base64')}` };
+  }
+
   async cleanup() {
     if (!this.client) return;
     const expired = await this.db.mediaAsset.findMany({ where: { status: 'pending', expiresAt: { lt: new Date(Date.now() - 3600000) } }, take: 100 });

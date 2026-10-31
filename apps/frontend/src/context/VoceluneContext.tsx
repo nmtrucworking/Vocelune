@@ -230,37 +230,37 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
       pendingReviews.current.set(cardId, pending);
     }
 
-    // Optimistically update snapshot in local state immediately (0ms)
-    setSnapshot((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        dueCards: prev.dueCards.filter((c) => c.id !== cardId),
-        overview: prev.overview
-          ? {
-              ...prev.overview,
-              todayReviewsCount: prev.overview.todayReviewsCount + 1,
-            }
-          : prev.overview,
-      };
-    });
-
     try {
-      const result = await post<{ reviewId: string }>(`/cards/${cardId}/reviews`, pending.body, {
+      const result = await post<{ reviewId: string; card?: Card }>(`/cards/${cardId}/reviews`, pending.body, {
         'Idempotency-Key': pending.key,
       });
       setLastReview({ id: result.reviewId, at: Date.now() });
       reveals.current.delete(cardId);
       pendingReviews.current.delete(cardId);
+
+      // Apply confirmed server updates upon receiving response (res)
+      setSnapshot((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          dueCards: prev.dueCards.filter((c) => c.id !== cardId),
+          cards: result?.card ? prev.cards.map((c) => (c.id === cardId ? result.card! : c)) : prev.cards,
+          overview: prev.overview
+            ? {
+                ...prev.overview,
+                todayReviewsCount: prev.overview.todayReviewsCount + 1,
+              }
+            : prev.overview,
+        };
+      });
     } catch (e) {
       if (e instanceof ApiError && e.status < 500) {
         pendingReviews.current.delete(cardId);
         reveals.current.delete(cardId);
       }
-      void refresh().catch(() => {});
       throw e;
     }
-  }, [post, refresh]);
+  }, [post]);
   const undoLastReview = useCallback(async () => {
     if (!lastReview) return false;
     await perform(() => post(`/reviews/${lastReview.id}/undo`)); setLastReview(null); reveals.current.clear(); return true;

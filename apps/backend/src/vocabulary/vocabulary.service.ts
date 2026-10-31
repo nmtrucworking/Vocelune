@@ -212,7 +212,7 @@ export class VocabularyService {
     this.seedingOfficialDecks = true;
     try {
       const email = 'editorial@vocelune.com';
-      let author = await this.db.user.findUnique({ where: { email } });
+      let author = await this.db.user.findUnique({ where: { email }, include: { settings: true } });
       if (!author) {
         author = await this.db.user.create({
           data: {
@@ -220,8 +220,14 @@ export class VocabularyService {
             displayName: 'Ban Biên Tập Vocelune',
             passwordHash: await passwordHash('VoceluneOfficial2026!'),
             role: 'admin',
-            settings: { create: {} },
+            settings: {
+              create: {
+                emailReminderStudy: false,
+                emailDailySummary: false,
+              },
+            },
           },
+          include: { settings: true },
         });
         await this.db.schedulerConfig.create({
           data: {
@@ -233,7 +239,24 @@ export class VocabularyService {
             parameters: json(parameters(0.9)),
           },
         });
+      } else {
+        // Ensure editorial system account never receives student notifications
+        await this.db.userSettings.upsert({
+          where: { userId: author.id },
+          create: {
+            userId: author.id,
+            emailReminderStudy: false,
+            emailDailySummary: false,
+          },
+          update: {
+            emailReminderStudy: false,
+            emailDailySummary: false,
+          },
+        });
       }
+
+      // Editorial account does not study; purge any orphaned cards that trigger study reminders
+      await this.db.card.deleteMany({ where: { userId: author.id } }).catch(() => {});
 
       const scheduler = await this.db.schedulerConfig.findFirstOrThrow({
         where: { userId: author.id },
@@ -310,12 +333,6 @@ export class VocabularyService {
                 cefr: w.cefr as any,
                 cefrSource: 'verified_3000',
                 tags: [normalized(deckData.topicGroup), normalized(w.partOfSpeech)],
-                cards: {
-                  create: [
-                    { userId: author.id, template: 'en_vi', schedulerConfigId: scheduler.id },
-                    { userId: author.id, template: 'vi_en', schedulerConfigId: scheduler.id },
-                  ],
-                },
               },
             });
           }

@@ -14,7 +14,10 @@ export function encryptEmail(text: string) {
   return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64');
 }
 export function decryptEmail(text: string) {
-  const bytes = Buffer.from(text, 'base64'), decipher = createDecipheriv('aes-256-gcm', key(), bytes.subarray(0, 12));
+  if (!text) return '';
+  const bytes = Buffer.from(text, 'base64');
+  if (bytes.length < 28) return '';
+  const decipher = createDecipheriv('aes-256-gcm', key(), bytes.subarray(0, 12));
   decipher.setAuthTag(bytes.subarray(12, 28));
   return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString('utf8');
 }
