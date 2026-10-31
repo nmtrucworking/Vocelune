@@ -29,7 +29,7 @@ import { MaintenanceService } from './common/maintenance.service';
 
 @Module({ controllers: [VocabularyController], providers: [VocabularyService], exports: [VocabularyService] })
 export class VocabularyModule {}
-@Module({ imports: [VocabularyModule], controllers: [IntegrationsController], providers: [DictionaryService, DictionaryTransport, MediaService], exports: [MediaService] })
+@Module({ imports: [VocabularyModule], controllers: [IntegrationsController], providers: [DictionaryService, DictionaryTransport, MediaService], exports: [MediaService, DictionaryService, DictionaryTransport] })
 export class IntegrationsModule {}
 @Module({ imports: [IntegrationsModule], controllers: [IdentityController], providers: [IdentityService], exports: [IdentityService] })
 export class IdentityModule {}
@@ -41,7 +41,7 @@ export class TestsModule {}
 export class TransferModule {}
 @Module({ imports: [StudyModule, TestsModule], controllers: [AnalyticsController], providers: [AnalyticsService] })
 export class AnalyticsModule {}
-@Module({ imports: [VocabularyModule], controllers: [AdminController], providers: [AdminService] })
+@Module({ imports: [VocabularyModule, IntegrationsModule], controllers: [AdminController], providers: [AdminService] })
 export class AdminModule {}
 @Controller('health')
 class HealthController {

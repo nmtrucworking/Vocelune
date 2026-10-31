@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Menu,
@@ -17,12 +17,15 @@ import {
   BookOpen,
   TrendingUp,
   Sparkles,
-  User,
   ShieldCheck,
   BarChart3,
   FileSpreadsheet,
   PanelLeftClose,
   PanelLeftOpen,
+  Database,
+  Users,
+  Activity,
+  LayoutDashboard,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { useNotification } from '@/context/NotificationContext';
@@ -44,13 +47,27 @@ export function Navbar({
   onToggleSidebar,
 }: NavbarProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, settings, streak, vocabItems, observedRetention, logout } = useVocelune();
   const { notify, soundEnabled, toggleSound, browserPushSupported, browserPushPermission, requestBrowserPermission } = useNotification();
   const [popoverOpen, setPopoverOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const isAdmin = user?.role === 'admin';
 
   const handleTestAudio = () => {
     speakWord('Vocelune, a rhythm for every word.', settings.englishDialect);
+  };
+
+  const navigateAdminTab = (tabId: string) => {
+    setPopoverOpen(false);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('vocelune-admin-tab', { detail: tabId }));
+      if (pathname === '/admin' || pathname === '/dashboard') {
+        window.history.pushState(null, '', `/admin?tab=${tabId}`);
+      } else {
+        router.push(`/admin?tab=${tabId}`);
+      }
+    }
   };
 
   // Close popover when clicking outside or pressing Escape
@@ -113,11 +130,16 @@ export function Navbar({
           </button>
         )}
 
-        {pageTitle && (
+        {pageTitle ? (
           <h1 className="text-sm font-semibold text-brand-ink hidden sm:block">
             {pageTitle}
           </h1>
-        )}
+        ) : isAdmin ? (
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/70 text-[11px] font-semibold text-brand-primary">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Trung tâm Quản trị Hệ thống</span>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2">
@@ -139,23 +161,47 @@ export function Navbar({
           <span className="hidden sm:inline text-[11px]">{soundEnabled ? 'Âm thanh' : 'Tắt âm'}</span>
         </button>
 
-        {/* Audio Dialect Quick Tester */}
-        <button
-          onClick={handleTestAudio}
-          title={`Phát âm mẫu (${settings.englishDialect.toUpperCase()})`}
-          className="hidden sm:flex items-center gap-1 px-2 py-1 text-xs font-medium text-text-secondary hover:text-brand-primary bg-slate-100 hover:bg-brand-primarySoft rounded-md transition-colors"
-        >
-          <span className="uppercase font-mono text-[10px]">{settings.englishDialect}</span>
-        </button>
+        {isAdmin ? (
+          <>
+            <button
+              type="button"
+              onClick={() => navigateAdminTab('dictionary')}
+              className="hidden sm:flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-primary bg-brand-primarySoft hover:bg-brand-primary/15 rounded-md transition-colors"
+              title="Quản lý & Kiểm thử API Từ điển"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>API Từ điển</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigateAdminTab('overview')}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-brand-primary hover:bg-brand-primaryHover rounded-md shadow-2xs transition-all duration-150 active:scale-95"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Quản trị</span>
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Audio Dialect Quick Tester */}
+            <button
+              onClick={handleTestAudio}
+              title={`Phát âm mẫu (${settings.englishDialect.toUpperCase()})`}
+              className="hidden sm:flex items-center gap-1 px-2 py-1 text-xs font-medium text-text-secondary hover:text-brand-primary bg-slate-100 hover:bg-brand-primarySoft rounded-md transition-colors"
+            >
+              <span className="uppercase font-mono text-[10px]">{settings.englishDialect}</span>
+            </button>
 
-        {/* Quick Add Button */}
-        <button
-          onClick={onOpenQuickAdd}
-          className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-brand-primary hover:bg-brand-primaryHover rounded-md shadow-2xs transition-all duration-150 active:scale-95"
-        >
-          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-          <span>Thêm từ</span>
-        </button>
+            {/* Quick Add Button */}
+            <button
+              onClick={onOpenQuickAdd}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-brand-primary hover:bg-brand-primaryHover rounded-md shadow-2xs transition-all duration-150 active:scale-95"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Thêm từ</span>
+            </button>
+          </>
+        )}
 
         {/* Profile Avatar & Interactive Popover */}
         <div className="relative pl-1.5 border-l border-slate-200" ref={popoverRef}>
@@ -228,85 +274,160 @@ export function Navbar({
                         {user?.email || 'learner@vocelune.com'}
                       </p>
                       <div className="pt-0.5">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-primarySoft text-brand-primary">
-                          <Sparkles className="w-2.5 h-2.5" />
-                          <span>Học viên FSRS</span>
-                        </span>
+                        {isAdmin ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                            <ShieldCheck className="w-2.5 h-2.5 text-brand-primary" />
+                            <span>Quản trị viên Hệ thống</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-primarySoft text-brand-primary">
+                            <Sparkles className="w-2.5 h-2.5" />
+                            <span>Học viên FSRS</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   {/* Micro Stats Strip */}
-                  <div className="grid grid-cols-3 gap-1 bg-surface-subtle p-2 rounded-xl border border-slate-200/60 text-center">
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] text-text-secondary flex items-center justify-center gap-0.5">
-                        <Flame className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
-                        <span>Chuỗi</span>
-                      </span>
-                      <span className="text-xs font-extrabold text-brand-ink">
-                        {streak}d
-                      </span>
+                  {isAdmin ? (
+                    <div className="grid grid-cols-3 gap-1 bg-indigo-50/60 p-2 rounded-xl border border-indigo-200/60 text-center">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-text-secondary block">Vai trò</span>
+                        <span className="text-[11px] font-extrabold text-brand-primary">ROOT ADMIN</span>
+                      </div>
+                      <div className="space-y-0.5 border-x border-indigo-200/60">
+                        <span className="text-[10px] text-text-secondary block">Phạm vi</span>
+                        <span className="text-[11px] font-extrabold text-brand-ink">Toàn hệ thống</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-text-secondary block">Bảo mật</span>
+                        <span className="text-[11px] font-extrabold text-emerald-600">Đang bảo vệ</span>
+                      </div>
                     </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-1 bg-surface-subtle p-2 rounded-xl border border-slate-200/60 text-center">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-text-secondary flex items-center justify-center gap-0.5">
+                          <Flame className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
+                          <span>Chuỗi</span>
+                        </span>
+                        <span className="text-xs font-extrabold text-brand-ink">
+                          {streak}d
+                        </span>
+                      </div>
 
-                    <div className="space-y-0.5 border-x border-slate-200/60">
-                      <span className="text-[10px] text-text-secondary flex items-center justify-center gap-0.5">
-                        <BookOpen className="w-2.5 h-2.5 text-brand-primary" />
-                        <span>Kho từ</span>
-                      </span>
-                      <span className="text-xs font-extrabold text-brand-ink">
-                        {vocabItems.length}
-                      </span>
-                    </div>
+                      <div className="space-y-0.5 border-x border-slate-200/60">
+                        <span className="text-[10px] text-text-secondary flex items-center justify-center gap-0.5">
+                          <BookOpen className="w-2.5 h-2.5 text-brand-primary" />
+                          <span>Kho từ</span>
+                        </span>
+                        <span className="text-xs font-extrabold text-brand-ink">
+                          {vocabItems.length}
+                        </span>
+                      </div>
 
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] text-text-secondary flex items-center justify-center gap-0.5">
-                        <TrendingUp className="w-2.5 h-2.5 text-emerald-600" />
-                        <span>Tỷ lệ nhớ</span>
-                      </span>
-                      <span className="text-xs font-extrabold text-emerald-600">
-                        {observedRetention !== null ? `${observedRetention}%` : 'N/A'}
-                      </span>
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-text-secondary flex items-center justify-center gap-0.5">
+                          <TrendingUp className="w-2.5 h-2.5 text-emerald-600" />
+                          <span>Tỷ lệ nhớ</span>
+                        </span>
+                        <span className="text-xs font-extrabold text-emerald-600">
+                          {observedRetention !== null ? `${observedRetention}%` : 'N/A'}
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Quick Navigation Links */}
                 <div className="p-1.5 space-y-0.5 text-xs">
-                  <Link
-                    href="/profile"
-                    onClick={() => setPopoverOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
-                  >
-                    <Settings className="w-4 h-4 text-slate-400" />
-                    <span>Hồ sơ & Cài đặt hệ thống</span>
-                  </Link>
+                  {isAdmin ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => navigateAdminTab('overview')}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors text-left"
+                      >
+                        <LayoutDashboard className="w-4 h-4 text-slate-400" />
+                        <span>Tổng quan Quản trị Website</span>
+                      </button>
 
-                  <Link
-                    href="/library"
-                    onClick={() => setPopoverOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
-                  >
-                    <BookOpen className="w-4 h-4 text-slate-400" />
-                    <span>Thư viện từ vựng & Chủ đề</span>
-                  </Link>
+                      <button
+                        type="button"
+                        onClick={() => navigateAdminTab('dictionary')}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors text-left"
+                      >
+                        <Database className="w-4 h-4 text-slate-400" />
+                        <span>Quản lý API Từ điển & Kho từ</span>
+                      </button>
 
-                  <Link
-                    href="/analytics"
-                    onClick={() => setPopoverOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
-                  >
-                    <BarChart3 className="w-4 h-4 text-slate-400" />
-                    <span>Phân tích & Tiến độ FSRS</span>
-                  </Link>
+                      <button
+                        type="button"
+                        onClick={() => navigateAdminTab('users')}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors text-left"
+                      >
+                        <Users className="w-4 h-4 text-slate-400" />
+                        <span>Quản lý Người dùng & Quyền</span>
+                      </button>
 
-                  <Link
-                    href="/import"
-                    onClick={() => setPopoverOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
-                  >
-                    <FileSpreadsheet className="w-4 h-4 text-slate-400" />
-                    <span>Nhập / Xuất dữ liệu</span>
-                  </Link>
+                      <button
+                        type="button"
+                        onClick={() => navigateAdminTab('operations')}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors text-left"
+                      >
+                        <Activity className="w-4 h-4 text-slate-400" />
+                        <span>Vận hành & Nhật ký Kiểm toán</span>
+                      </button>
+
+                      <Link
+                        href="/profile"
+                        onClick={() => setPopoverOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-brand-primary" />
+                        <span>Hồ sơ & Bảo mật Quản trị viên</span>
+                      </Link>
+                    </>
+                  ) : (
+                    <>
+                      <Link
+                        href="/profile"
+                        onClick={() => setPopoverOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
+                      >
+                        <Settings className="w-4 h-4 text-slate-400" />
+                        <span>Hồ sơ & Cài đặt hệ thống</span>
+                      </Link>
+
+                      <Link
+                        href="/library"
+                        onClick={() => setPopoverOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
+                      >
+                        <BookOpen className="w-4 h-4 text-slate-400" />
+                        <span>Thư viện từ vựng & Chủ đề</span>
+                      </Link>
+
+                      <Link
+                        href="/analytics"
+                        onClick={() => setPopoverOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
+                      >
+                        <BarChart3 className="w-4 h-4 text-slate-400" />
+                        <span>Phân tích & Tiến độ FSRS</span>
+                      </Link>
+
+                      <Link
+                        href="/import"
+                        onClick={() => setPopoverOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-slate-700 hover:text-brand-ink hover:bg-slate-100 font-medium transition-colors"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-slate-400" />
+                        <span>Nhập / Xuất dữ liệu</span>
+                      </Link>
+                    </>
+                  )}
                 </div>
 
                 {/* Notifications & Audio Feedback Settings */}

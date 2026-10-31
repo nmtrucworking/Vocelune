@@ -259,4 +259,52 @@ export class IdentityService {
     });
     return { ok: true };
   }
+  async sessions(userId: string, currentSessionId: string) {
+    const rows = await this.db.authSession.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, createdAt: true, expiresAt: true },
+    });
+    return {
+      items: rows.map(s => ({
+        id: s.id,
+        createdAt: s.createdAt,
+        expiresAt: s.expiresAt,
+        isCurrent: s.id === currentSessionId,
+      })),
+    };
+  }
+  async revokeOtherSessions(userId: string, currentSessionId: string) {
+    const res = await this.db.authSession.updateMany({
+      where: { userId, id: { not: currentSessionId }, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true, revokedCount: res.count };
+  }
+  async revokeSession(userId: string, sessionId: string, currentSessionId: string) {
+    if (sessionId === currentSessionId) fail(409, 'CURRENT_SESSION', 'Không thể thu hồi phiên hiện tại qua tác vụ này. Vui lòng dùng nút Đăng xuất.');
+    const session = await this.db.authSession.findFirst({ where: { id: sessionId, userId, revokedAt: null } });
+    if (!session) fail(404, 'NOT_FOUND', 'Không tìm thấy phiên đăng nhập.');
+    await this.db.authSession.update({ where: { id: sessionId }, data: { revokedAt: new Date() } });
+    return { ok: true };
+  }
+  async changePassword(userId: string, currentSessionId: string, body: unknown) {
+    const { currentPassword, newPassword } = z.object({
+      currentPassword: z.string().min(1),
+      newPassword: credentials.shape.password,
+    }).strict().parse(body);
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!await passwordMatches(currentPassword, user.passwordHash)) {
+      fail(403, 'INVALID_PASSWORD', 'Mật khẩu hiện tại không chính xác.');
+    }
+    const encrypted = await passwordHash(newPassword);
+    await this.db.forUser(userId, async tx => {
+      await tx.user.update({ where: { id: userId }, data: { passwordHash: encrypted } });
+      await tx.authSession.updateMany({
+        where: { userId, id: { not: currentSessionId }, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    });
+    return { ok: true };
+  }
 }

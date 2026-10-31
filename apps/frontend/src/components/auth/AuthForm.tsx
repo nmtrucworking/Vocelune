@@ -43,14 +43,15 @@ export function AuthForm({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'error' | 'success' } | null>(null);
 
-  const destination = redirectTo || searchParams.get('redirect') || '/dashboard';
+  const explicitRedirect = redirectTo || searchParams.get('redirect');
+  const destination = explicitRedirect || (user?.role === 'admin' ? '/admin' : '/dashboard');
 
   // If already logged in, redirect
   useEffect(() => {
     if (user && isStandalone) {
-      router.push(destination);
+      router.push(explicitRedirect || (user.role === 'admin' ? '/admin' : '/dashboard'));
     }
-  }, [user, isStandalone, router, destination]);
+  }, [user, isStandalone, router, explicitRedirect]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

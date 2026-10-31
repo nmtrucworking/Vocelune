@@ -63,6 +63,52 @@ test('admin console: role gate, user suspension, last-admin and self protection,
   await http.patch(`/api/v1/admin/users/${victim.userId}`).set(auth(boss)).send({ role: 'learner' }).expect(200);
   const logs = (await get('/admin/audit-logs?action=admin.user', boss).expect(200)).body.items;
   assert.ok(logs.length >= 4); assert.equal(logs[0].actor.email, 'boss@example.test');
+
+  // Admin Dictionary API & Corpus Management
+  await get('/admin/dictionary/overview', alice).expect(403);
+  const dictOverview = (await get('/admin/dictionary/overview', boss).expect(200)).body;
+  assert.ok(Array.isArray(dictOverview.providers));
+  assert.equal(dictOverview.providers.length, 9);
+
+  // Upsert local dictionary entry & probe it
+  const curated = (await post('/admin/dictionary/entries', boss, {
+    provider: 'local_kaikki',
+    lemma: 'idempotent',
+    partOfSpeech: 'adjective',
+    definitionEn: 'Denoting an operation that can be applied multiple times without changing the result.',
+    meaningVi: 'Lũy đẳng (thực thi nhiều lần cho cùng kết quả)',
+    ipa: '/ˌaɪ.dəmˈpoʊ.tənt/',
+    dialect: 'en-us',
+    cefr: 'C2',
+    examples: ['HTTP PUT requests should be idempotent.'],
+    synonyms: ['unchanging', 'invariant'],
+    domains: ['computer_science'],
+  }).expect(201)).body;
+  assert.equal(curated.lemma, 'idempotent');
+
+  const entriesPage = (await get('/admin/dictionary/entries?q=idempotent', boss).expect(200)).body;
+  assert.equal(entriesPage.items.length, 1);
+
+  const probeRes = (await post('/admin/dictionary/probe', boss, {
+    word: 'idempotent',
+    partOfSpeech: 'adjective',
+    provider: 'local_kaikki',
+    includeTranslation: false,
+  }).expect(201)).body;
+  assert.equal(probeRes.lookup.candidates.length, 1);
+  assert.equal(probeRes.lookup.candidates[0].senses[0].meaningVi.value, 'Lũy đẳng (thực thi nhiều lần cho cùng kết quả)');
+  assert.ok(probeRes.diagnostics.cefr.cefr);
+
+  await post('/admin/dictionary/providers/all/reset-health', boss).expect(201);
+  await post('/admin/dictionary/providers/all/reset-quota', boss).expect(201);
+  await post('/admin/dictionary/cache/clear', boss).expect(201);
+  await http.delete(`/api/v1/admin/dictionary/entries/${curated.id}`).set(auth(boss)).expect(200);
+
+  // Admin operations overview & user session inspection
+  const opsOverview = (await get('/admin/operations/overview', boss).expect(200)).body;
+  assert.ok(typeof opsOverview.activeSessions === 'number');
+  const mySessions = (await get('/me/sessions', boss).expect(200)).body;
+  assert.ok(mySessions.items.some((s: { isCurrent: boolean }) => s.isCurrent));
 });
 
 test('per-account login lockout after repeated failures', async () => {

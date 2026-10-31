@@ -58,6 +58,14 @@ export class IdentityController {
   @Public()
   @Get('users/:id/avatar')
   getAvatar(@Param('id') userId: string, @Req() req: any, @Res() res: Response) { return this.media.streamAvatar(id(userId), res, req.headers?.['if-none-match']); }
+  @Get('me/sessions')
+  getSessions(@Req() req: AuthRequest) { return this.identity.sessions(req.auth.userId, req.auth.sessionId); }
+  @Post('me/sessions/revoke-others')
+  revokeOtherSessions(@Req() req: AuthRequest) { return this.identity.revokeOtherSessions(req.auth.userId, req.auth.sessionId); }
+  @Delete('me/sessions/:id')
+  revokeSession(@Req() req: AuthRequest, @Param('id') sessionId: string) { return this.identity.revokeSession(req.auth.userId, id(sessionId), req.auth.sessionId); }
+  @Post('me/password')
+  changePassword(@Req() req: AuthRequest, @Body() body: unknown) { return this.identity.changePassword(req.auth.userId, req.auth.sessionId, body); }
   @Delete('me') async remove(@Req() req: AuthRequest, @Body() body: unknown, @Res({ passthrough: true }) res: Response) {
     const result = await this.identity.deleteAccount(req.auth.userId, body);
     const clearOpts = this.cookieOptions();

@@ -340,4 +340,79 @@ export class DictionaryService {
       return vocabDto(saved);
     });
   }
+
+  getAdaptersStatus() {
+    return Object.values(this.adapters).map(adapter => {
+      const s = adapter.status();
+      const limits =
+        s.id === 'merriam_webster'
+          ? { dailyLimit: config.MERRIAM_WEBSTER_DAILY_LIMIT, monthlyLimit: null }
+          : s.id === 'oxford'
+          ? { dailyLimit: config.OXFORD_DAILY_LIMIT, monthlyLimit: null }
+          : s.id === 'wordsapi'
+          ? { dailyLimit: config.WORDSAPI_DAILY_LIMIT, monthlyLimit: null }
+          : s.id === 'collins'
+          ? { dailyLimit: null, monthlyLimit: config.COLLINS_MONTHLY_LIMIT }
+          : s.id === 'datamuse'
+          ? { dailyLimit: config.DATAMUSE_DAILY_LIMIT, monthlyLimit: null }
+          : { dailyLimit: null, monthlyLimit: null };
+      return { ...s, ...limits };
+    });
+  }
+
+  getCacheStats() {
+    return {
+      lookupCacheSize: this.cache.size,
+      translationCacheSize: this.translationCache.size,
+      cacheTtlSeconds: config.DICTIONARY_CACHE_TTL_SECONDS,
+      maxRequests: config.DICTIONARY_MAX_REQUESTS,
+      licenseMode: config.DICTIONARY_LICENSE_MODE,
+      userAgent: config.DICTIONARY_USER_AGENT,
+    };
+  }
+
+  clearCaches() {
+    const lookupCleared = this.cache.size;
+    const translationCleared = this.translationCache.size;
+    this.cache.clear();
+    this.translationCache.clear();
+    return { ok: true, lookupCleared, translationCleared };
+  }
+
+  async probe(userId: string, body: unknown) {
+    const probeSchema = lookupSchema.extend({
+      fresh: z.boolean().default(true),
+      includeTranslation: z.boolean().default(true),
+    });
+    const input = probeSchema.parse(body);
+    const requested = (input.provider ?? 'auto') as DictionarySelection;
+    const lookup = await this.orchestrate(
+      userId,
+      input,
+      requested,
+      input.allowFallback ?? (requested === 'auto'),
+      input.fresh
+    );
+    const firstSense = lookup.candidates[0]?.senses[0];
+    const firstDef = firstSense?.definition.value || '';
+    const [ipaResolved, cefrEstimated, translationResult] = await Promise.all([
+      resolveWordIpa(input.word, input.dialect).catch(() => null),
+      estimateWordCefr(input.word, input.partOfSpeech, firstDef || undefined).catch(() => null),
+      input.includeTranslation
+        ? this.translateDirect(firstDef || input.word, 'en', 'vi').catch(() => ({
+            translation: '',
+            alternatives: [],
+            source: 'none',
+          }))
+        : Promise.resolve(null),
+    ]);
+    return {
+      lookup,
+      diagnostics: {
+        ipa: ipaResolved ?? { ipa: '', dialect: input.dialect, source: 'none' },
+        cefr: cefrEstimated,
+        translation: translationResult,
+      },
+    };
+  }
 }

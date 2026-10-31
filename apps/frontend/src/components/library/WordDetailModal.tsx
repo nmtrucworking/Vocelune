@@ -20,9 +20,14 @@ interface WordDetailModalProps {
   onClose: () => void;
 }
 
-export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps) {
-  const { updateVocabItem, deleteVocabItem, addDeck, decks, cards, settings, uploadVocabImage, removeVocabImage } = useVocelune();
+export function WordDetailModal({ vocab: propVocab, isOpen, onClose }: WordDetailModalProps) {
+  const { vocabItems, updateVocabItem, deleteVocabItem, addDeck, decks, cards, settings, uploadVocabImage, removeVocabImage } = useVocelune();
   const { notify } = useNotification();
+
+  const vocab = useMemo(() => {
+    if (!propVocab) return null;
+    return vocabItems.find((v) => v.id === propVocab.id) || propVocab;
+  }, [propVocab, vocabItems]);
 
   const [isEditing, setIsEditing] = useState(false);
   const [word, setWord] = useState(vocab?.word || '');
@@ -212,8 +217,6 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
     }
   }, [vocab, decks]);
 
-  if (!isOpen || !vocab) return null;
-
   const card = useMemo(() => {
     if (!vocab) return undefined;
     const vocabCards = cards.filter((c) => c.vocabItemId === vocab.id);
@@ -238,6 +241,8 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
       return currScore > bestScore ? curr : best;
     });
   }, [vocab, cards]);
+
+  if (!isOpen || !vocab) return null;
   const deck = decks.find((d) => d.id === vocab.deckId);
 
   const handleSpeak = () => {
