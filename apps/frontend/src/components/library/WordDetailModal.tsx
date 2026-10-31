@@ -214,7 +214,30 @@ export function WordDetailModal({ vocab, isOpen, onClose }: WordDetailModalProps
 
   if (!isOpen || !vocab) return null;
 
-  const card = cards.find((c) => c.vocabItemId === vocab.id);
+  const card = useMemo(() => {
+    if (!vocab) return undefined;
+    const vocabCards = cards.filter((c) => c.vocabItemId === vocab.id);
+    if (!vocabCards.length) return undefined;
+
+    const stateWeight: Record<string, number> = { review: 4, learning: 3, relearning: 3, new: 1 };
+    return vocabCards.reduce((best, curr) => {
+      const currScore =
+        (curr.reps > 0 ? 10000 : 0) +
+        (stateWeight[curr.state] || 0) * 1000 +
+        Math.min(500, Math.round((curr.stability || 0) * 10)) +
+        (curr.template === 'en_vi' ? 100 : 0) +
+        (curr.lastReviewedAt ? 50 : 0);
+
+      const bestScore =
+        (best.reps > 0 ? 10000 : 0) +
+        (stateWeight[best.state] || 0) * 1000 +
+        Math.min(500, Math.round((best.stability || 0) * 10)) +
+        (best.template === 'en_vi' ? 100 : 0) +
+        (best.lastReviewedAt ? 50 : 0);
+
+      return currScore > bestScore ? curr : best;
+    });
+  }, [vocab, cards]);
   const deck = decks.find((d) => d.id === vocab.deckId);
 
   const handleSpeak = () => {

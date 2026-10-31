@@ -84,20 +84,63 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
     return new Map(decks.map((d) => [d.id, d]));
   }, [decks]);
 
-  // Map cards by vocabItemId
+  // Map cards by vocabItemId with intelligent prioritization:
+  // 1. Cards with reviews (reps > 0)
+  // 2. Active learning/review state over 'new'
+  // 3. Higher stability / recent review
+  // 4. Primary 'en_vi' template
   const cardMap = useMemo(() => {
-    return new Map(cards.map((c) => [c.vocabItemId, c]));
+    const map = new Map<string, (typeof cards)[0]>();
+    const stateWeight: Record<string, number> = { review: 4, learning: 3, relearning: 3, new: 1 };
+
+    for (const c of cards) {
+      const existing = map.get(c.vocabItemId);
+      if (!existing) {
+        map.set(c.vocabItemId, c);
+        continue;
+      }
+
+      const cScore =
+        (c.reps > 0 ? 10000 : 0) +
+        (stateWeight[c.state] || 0) * 1000 +
+        Math.min(500, Math.round((c.stability || 0) * 10)) +
+        (c.template === 'en_vi' ? 100 : 0) +
+        (c.lastReviewedAt ? 50 : 0);
+
+      const existingScore =
+        (existing.reps > 0 ? 10000 : 0) +
+        (stateWeight[existing.state] || 0) * 1000 +
+        Math.min(500, Math.round((existing.stability || 0) * 10)) +
+        (existing.template === 'en_vi' ? 100 : 0) +
+        (existing.lastReviewedAt ? 50 : 0);
+
+      if (cScore > existingScore) {
+        map.set(c.vocabItemId, c);
+      }
+    }
+    return map;
   }, [cards]);
 
-  // Map review logs by cardId
+  // Map review logs by cardId and vocabItemId
   const cardLogsMap = useMemo(() => {
+    const cardToVocab = new Map<string, string>();
+    for (const c of cards) {
+      cardToVocab.set(c.id, c.vocabItemId);
+    }
+
     const map = new Map<string, typeof reviewLogs>();
     for (const log of reviewLogs) {
       if (!map.has(log.cardId)) map.set(log.cardId, []);
       map.get(log.cardId)!.push(log);
+
+      const vocabId = cardToVocab.get(log.cardId);
+      if (vocabId) {
+        if (!map.has(vocabId)) map.set(vocabId, []);
+        map.get(vocabId)!.push(log);
+      }
     }
     return map;
-  }, [reviewLogs]);
+  }, [cards, reviewLogs]);
 
   // Available topic groups in user decks
   const availableTopicGroups = useMemo(() => {
@@ -199,7 +242,7 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
         const card = cardMap.get(item.id);
         if (!card) return false;
         if (selectedStatus === 'due') {
-          if (card.suspended || new Date(card.dueAt).getTime() > now) return false;
+          if (card.suspended || card.state === 'new' || new Date(card.dueAt).getTime() > now) return false;
         } else if (selectedStatus === 'new') {
           if (card.state !== 'new') return false;
         } else if (selectedStatus === 'learning') {
@@ -768,8 +811,8 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                   <tbody className="divide-y divide-slate-100">
                     {paginatedVocab.map((item) => {
                       const card = cardMap.get(item.id);
-                      const cardLogs = card ? cardLogsMap.get(card.id) : undefined;
-                      const isDue = card && new Date(card.dueAt).getTime() <= Date.now();
+                      const cardLogs = card ? (cardLogsMap.get(item.id) || cardLogsMap.get(card.id)) : undefined;
+                      const isDue = card && !card.suspended && card.state !== 'new' && new Date(card.dueAt).getTime() <= Date.now();
                       const itemDeck = deckMap.get(item.deckId);
                       const isSelected = selectedIds.has(item.id);
 
@@ -874,7 +917,11 @@ export function LibraryView({ onOpenQuickAdd }: LibraryViewProps) {
                           {/* Due Time */}
                           <td className="py-2 px-2 font-mono text-[11px] text-center">
                             {card ? (
-                              isDue ? (
+                              card.state === 'new' ? (
+                                <span className="text-[10px] text-slate-400 font-sans">Chưa học</span>
+                              ) : card.suspended ? (
+                                <span className="text-[10px] text-slate-400 font-sans">Tạm dừng</span>
+                              ) : isDue ? (
                                 <span
                                   title="Đến hạn ôn ngay (FSRS)"
                                   className="inline-flex items-center justify-center p-1 rounded-md bg-rose-50 text-rose-600 border border-rose-200/80 shadow-2xs group-hover:scale-105 transition-transform"
