@@ -57,7 +57,7 @@ export class StudyService {
     return { serverNow: now, cards: cards.map(cardDto), counts: { due: due.length, newRemaining: remaining, available: cards.length }, scheduler: { modelVersion: 'FSRS-6', libraryVersion: '5.4.2' } };
   }
   async start(userId: string, body: unknown, kind = 'srs') {
-    const { mode } = z.object({ mode: z.enum(['flashcard', 'typed', 'mcq', 'listening']).default('flashcard') }).strict().parse(body);
+    const { mode } = z.object({ mode: z.enum(['flashcard', 'typed', 'mcq', 'listening', 'sentence']).default('flashcard') }).strict().parse(body);
     const settings = await this.db.userSettings.findUniqueOrThrow({ where: { userId } });
     const session = await this.db.studySession.create({ data: { userId, mode, kind, settingsSnapshot: json(settings) } });
     return { id: session.id, mode, startedAt: session.startedAt };

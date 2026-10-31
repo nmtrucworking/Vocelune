@@ -1,4 +1,6 @@
 'use client';
+import type { SentenceCheckResult } from '@/types';
+
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
 }
@@ -20,4 +22,14 @@ export async function downloadApi(path: string, filename: string, body?: unknown
   if (!response.ok) throw new Error('Không thể tải tệp từ máy chủ.');
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
+}
+
+export async function checkSentenceApi(data: {
+  sentence: string;
+  word: string;
+  meaningVi?: string;
+  partOfSpeech?: string;
+  dialect?: 'en-us' | 'en-gb';
+}): Promise<SentenceCheckResult> {
+  return post<SentenceCheckResult>('/study/sentence-check', data);
 }

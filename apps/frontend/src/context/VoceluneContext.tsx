@@ -40,20 +40,60 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [isLoaded, setLoaded] = useState(false), [error, setError] = useState<string | null>(null);
   const [lastReview, setLastReview] = useState<{ id: string; at: number } | null>(null);
+  const [liveNow, setLiveNow] = useState(Date.now());
+  const syncChannelRef = useRef<BroadcastChannel | null>(null);
   const session = useRef<Promise<{ id: string }> | null>(null);
   const reveals = useRef(new Map<string, Promise<{ revealId: string; cardVersion: number }>>());
   const pendingReviews = useRef(new Map<string, { key: string; body: unknown }>());
   const refreshSequence = useRef(0);
+
+  // 1s live clock ticker to evaluate due cards dynamically in realtime
+  useEffect(() => {
+    const timer = window.setInterval(() => setLiveNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // BroadcastChannel for cross-tab realtime synchronization
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
+    const ch = new BroadcastChannel('vocelune_live_sync');
+    syncChannelRef.current = ch;
+    ch.onmessage = (e) => {
+      if (e.data?.type === 'SYNC_REQUEST' || e.data?.type === 'CARD_GRADED' || e.data?.type === 'VOCAB_CHANGED') {
+        void refresh().catch(() => {});
+      }
+    };
+    return () => {
+      ch.close();
+      syncChannelRef.current = null;
+    };
+  }, []);
+
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current;
     try { const data = await api<Snapshot>('/bootstrap'); if (sequence === refreshSequence.current) setSnapshot(data); }
     catch (e) { if (e instanceof ApiError && e.status === 401) { if (sequence === refreshSequence.current) setSnapshot(null); return; } throw e; }
   }, []);
   useEffect(() => { refresh().catch(e => setError(e.message)).finally(() => setLoaded(true)); }, [refresh]);
+
+  // Realtime background sync: poll every 10s when visible + trigger on focus/visibilitychange
   useEffect(() => {
     if (!snapshot?.user) return;
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh().catch(e => setError(e.message)); }, 60000);
-    return () => clearInterval(timer);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh().catch(e => setError(e.message));
+    }, 10000);
+
+    const onVisibleOrFocus = () => {
+      if (document.visibilityState === 'visible') void refresh().catch(e => setError(e.message));
+    };
+    window.addEventListener('visibilitychange', onVisibleOrFocus);
+    window.addEventListener('focus', onVisibleOrFocus);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('visibilitychange', onVisibleOrFocus);
+      window.removeEventListener('focus', onVisibleOrFocus);
+    };
   }, [snapshot?.user.id, refresh]);
   useEffect(() => {
     if (!lastReview) return;
@@ -230,6 +270,46 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
       pendingReviews.current.set(cardId, pending);
     }
 
+    // 1. Optimistic update: instantly update dueCards, card state, and bury siblings
+    setSnapshot((prev) => {
+      if (!prev) return prev;
+      const targetCard = prev.cards.find((c) => c.id === cardId);
+      const nextState = rating === 1 ? 'relearning' : (targetCard?.state === 'new' ? 'learning' : targetCard?.state || 'learning');
+      const nextIntervalDays = rating === 1 ? 0.005 : (rating === 2 ? 1 : (rating === 3 ? 3 : 7));
+      const nextDueAt = new Date(Date.now() + nextIntervalDays * 86400000).toISOString();
+
+      const updatedCards = prev.cards.map((c) => {
+        if (c.id === cardId) {
+          return {
+            ...c,
+            state: nextState,
+            dueAt: nextDueAt,
+            lastReviewedAt: new Date().toISOString(),
+            reps: c.reps + 1,
+            lapses: rating === 1 ? c.lapses + 1 : c.lapses,
+          };
+        }
+        if (targetCard && c.vocabItemId === targetCard.vocabItemId && c.id !== cardId) {
+          const tomorrow = new Date();
+          tomorrow.setHours(tomorrow.getHours() + 16);
+          return { ...c, buriedUntil: tomorrow.toISOString() };
+        }
+        return c;
+      });
+
+      return {
+        ...prev,
+        dueCards: prev.dueCards.filter((c) => c.id !== cardId),
+        cards: updatedCards,
+        overview: prev.overview
+          ? {
+              ...prev.overview,
+              todayReviewsCount: prev.overview.todayReviewsCount + 1,
+            }
+          : prev.overview,
+      };
+    });
+
     try {
       const result = await post<{ reviewId: string; card?: Card }>(`/cards/${cardId}/reviews`, pending.body, {
         'Idempotency-Key': pending.key,
@@ -238,29 +318,26 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
       reveals.current.delete(cardId);
       pendingReviews.current.delete(cardId);
 
-      // Apply confirmed server updates upon receiving response (res)
+      // Reconcile server card updates
       setSnapshot((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
-          dueCards: prev.dueCards.filter((c) => c.id !== cardId),
           cards: result?.card ? prev.cards.map((c) => (c.id === cardId ? result.card! : c)) : prev.cards,
-          overview: prev.overview
-            ? {
-                ...prev.overview,
-                todayReviewsCount: prev.overview.todayReviewsCount + 1,
-              }
-            : prev.overview,
         };
       });
+
+      // Broadcast sync to other tabs
+      syncChannelRef.current?.postMessage({ type: 'CARD_GRADED', cardId, reviewId: result.reviewId });
     } catch (e) {
       if (e instanceof ApiError && e.status < 500) {
         pendingReviews.current.delete(cardId);
         reveals.current.delete(cardId);
       }
+      void refresh().catch(() => {});
       throw e;
     }
-  }, [post]);
+  }, [post, refresh]);
   const undoLastReview = useCallback(async () => {
     if (!lastReview) return false;
     await perform(() => post(`/reviews/${lastReview.id}/undo`)); setLastReview(null); reveals.current.clear(); return true;
@@ -377,12 +454,38 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
     });
   }, [perform, refresh, notify]);
   const cards = snapshot?.cards ?? [];
-  const computed = useMemo(() => ({ newCards: cards.filter(c => c.state === 'new'), learningCards: cards.filter(c => ['learning', 'relearning'].includes(c.state)), reviewCards: cards.filter(c => c.state === 'review') }), [cards]);
+  const computed = useMemo(() => ({
+    newCards: cards.filter(c => c.state === 'new' && !c.suspended),
+    learningCards: cards.filter(c => ['learning', 'relearning'].includes(c.state) && !c.suspended),
+    reviewCards: cards.filter(c => c.state === 'review' && !c.suspended),
+  }), [cards]);
+
+  const liveDueCards = useMemo(() => {
+    if (!snapshot) return [];
+    const now = liveNow;
+    const dueMap = new Map<string, Card>();
+    for (const c of snapshot.dueCards) {
+      if (!c.suspended) dueMap.set(c.id, c);
+    }
+    // Dynamic realtime inclusion for cards that reached dueAt
+    for (const c of snapshot.cards) {
+      if (c.suspended) continue;
+      if (c.state === 'new') continue;
+      if (c.buriedUntil && new Date(c.buriedUntil).getTime() > now) continue;
+      if (new Date(c.dueAt).getTime() <= now) {
+        if (!dueMap.has(c.id)) {
+          dueMap.set(c.id, c);
+        }
+      }
+    }
+    return Array.from(dueMap.values());
+  }, [snapshot, liveNow]);
+
   const overview = snapshot?.overview;
   return <VoceluneContext.Provider value={{ analytics: overview ?? null, user: snapshot?.user ?? null, error, clearError: () => setError(null), refresh, login, logout,
     vocabItems: snapshot?.vocabItems ?? [], decks: snapshot?.decks ?? [], cards, reviewLogs: snapshot?.reviewLogs ?? [], testAttempts: snapshot?.testAttempts ?? [], settings: snapshot?.settings ?? INITIAL_SETTINGS, isLoaded, canUndo: !!lastReview,
     addVocabItem, updateVocabItem, deleteVocabItem, batchDeleteVocabItems, batchMoveVocabItems, addDeck, updateDeck, deleteDeck, batchMoveDecksTopic, renameTopicGroup, deleteTopicGroup, forkPublicDeck, revealCard, gradeCard, undoLastReview, toggleSuspendCard, updateSettings, uploadAvatar, removeAvatar, uploadVocabImage, removeVocabImage,
-    dueCards: snapshot?.dueCards ?? [], ...computed, streak: overview?.streak ?? 0, observedRetention: overview?.observedRetention ?? null, retentionSampleSize: overview?.sampleSize ?? 0,
+    dueCards: liveDueCards, ...computed, streak: overview?.streak ?? 0, observedRetention: overview?.observedRetention ?? null, retentionSampleSize: overview?.sampleSize ?? 0,
     weakWords: overview?.weakWords ?? [], todayReviewsCount: overview?.todayReviewsCount ?? 0, activityHeatmap: overview?.activityHeatmap.slice(-42) ?? [],
   }}>{children}</VoceluneContext.Provider>;
 }

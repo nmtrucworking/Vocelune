@@ -47,6 +47,8 @@ const schema = z.object({
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET: z.string().optional(),
+  GEMINI_API_KEY: z.string().optional(),
+  LANGUAGETOOL_API_URL: z.string().url().default('https://api.languagetool.org/v2/check'),
 });
 export const config = schema.parse(process.env);
 

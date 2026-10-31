@@ -12,6 +12,7 @@ import { StudyController } from './study/study.controller';
 import { StudyService } from './study/study.service';
 import { NotificationsController } from './study/notifications.controller';
 import { NotificationsService } from './study/notifications.service';
+import { SentenceCheckerService } from './study/sentence-checker.service';
 import { TestsController } from './tests/tests.controller';
 import { TestsService } from './tests/tests.service';
 import { TransferController } from './transfer/transfer.controller';
@@ -30,7 +31,7 @@ export class VocabularyModule {}
 export class IntegrationsModule {}
 @Module({ imports: [IntegrationsModule], controllers: [IdentityController], providers: [IdentityService], exports: [IdentityService] })
 export class IdentityModule {}
-@Module({ controllers: [StudyController, NotificationsController], providers: [StudyService, NotificationsService], exports: [StudyService, NotificationsService] })
+@Module({ controllers: [StudyController, NotificationsController], providers: [StudyService, NotificationsService, SentenceCheckerService], exports: [StudyService, NotificationsService, SentenceCheckerService] })
 export class StudyModule {}
 @Module({ imports: [StudyModule], controllers: [TestsController], providers: [TestsService], exports: [TestsService] })
 export class TestsModule {}

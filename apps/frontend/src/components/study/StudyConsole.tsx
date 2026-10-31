@@ -19,14 +19,17 @@ import {
   Zap,
   Clock,
   Loader2,
+  AlertCircle,
+  PenTool,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { useNotification } from '@/context/NotificationContext';
-import { Card, VocabItem, FSRSRating, StudyMode } from '@/types';
+import { Card, VocabItem, FSRSRating, StudyMode, SentenceCheckResult } from '@/types';
 import { getFSRSPreviews, IntervalPreview } from '@/lib/fsrs-engine';
 import { speakWord } from '@/lib/speech';
 import { triggerConfetti } from '@/lib/confetti';
 import { AudioButton } from '../common/AudioButton';
+import { checkSentenceApi } from '@/lib/api';
 
 export type StudyScope = 'due' | 'new' | 'ahead' | 'all';
 
@@ -40,6 +43,13 @@ export function StudyConsole() {
   const [selectedTopicGroup, setSelectedTopicGroup] = useState<string>('all');
   const [selectedDeckId, setSelectedDeckId] = useState<string>('all');
   const [isGrading, setIsGrading] = useState(false);
+  const [liveNow, setLiveNow] = useState(Date.now());
+
+  // 1s ticker for realtime due calculation & countdowns
+  useEffect(() => {
+    const timer = window.setInterval(() => setLiveNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const availableGroups = useMemo(() => {
     const set = new Set<string>();
@@ -127,10 +137,10 @@ export function StudyConsole() {
     });
   }, [cards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap, newSortOrder]);
 
-  // Cards in learning/review schedule that are not yet due (ahead of schedule)
+  // Cards in learning/review schedule that are not yet due (ahead of schedule, recomputed in realtime)
   const aheadCards = useMemo(() => {
     const dueVocabIds = new Set(scopedDueCards.map((c) => c.vocabItemId));
-    const now = Date.now();
+    const now = liveNow;
     const cardByVocab = new Map<string, Card>();
 
     for (const card of cards) {
@@ -167,7 +177,7 @@ export function StudyConsole() {
     return Array.from(cardByVocab.values()).sort(
       (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
     );
-  }, [cards, scopedDueCards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap]);
+  }, [cards, scopedDueCards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap, liveNow]);
 
   const allCards = useMemo(() => {
     const seen = new Set<string>();
@@ -227,6 +237,11 @@ export function StudyConsole() {
   // MCQ mode state
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
 
+  // Sentence mode state
+  const [sentenceInput, setSentenceInput] = useState('');
+  const [isCheckingSentence, setIsCheckingSentence] = useState(false);
+  const [sentenceResult, setSentenceResult] = useState<SentenceCheckResult | null>(null);
+
   // Session completion stats
   const [completedCount, setCompletedCount] = useState(0);
   const [startTime, setStartTime] = useState<number>(Date.now());
@@ -250,6 +265,9 @@ export function StudyConsole() {
       setTypedInput('');
       setTypedSubmitted(false);
       setSelectedOption(null);
+      setSentenceInput('');
+      setIsCheckingSentence(false);
+      setSentenceResult(null);
       setStartTime(Date.now());
       lastSessionConfigRef.current = `${scope}::${selectedTopicGroup}::${selectedDeckId}::${newSortOrder}`;
     },
@@ -294,7 +312,7 @@ export function StudyConsole() {
   const dueRelativeText = useMemo(() => {
     if (!currentCard) return '';
     if (currentCard.state === 'new') return 'Thẻ mới';
-    const diffMs = new Date(currentCard.dueAt).getTime() - Date.now();
+    const diffMs = new Date(currentCard.dueAt).getTime() - liveNow;
     if (diffMs <= 0) return 'Đến hạn ôn';
     const mins = Math.round(diffMs / 60000);
     if (mins < 60) return `${mins} phút nữa`;
@@ -302,7 +320,7 @@ export function StudyConsole() {
     if (hours < 24) return `${hours} giờ nữa`;
     const days = Math.round(hours / 24);
     return `${days} ngày nữa`;
-  }, [currentCard]);
+  }, [currentCard, liveNow]);
 
   useEffect(() => {
     let cancelled = false;
@@ -338,43 +356,45 @@ export function StudyConsole() {
     }
   }, [isFlipped, settings.autoPronounce, currentVocab, settings.englishDialect]);
 
-  // Grade action (FSRS rating 1-4) awaiting response confirmation
+  // Grade action (FSRS rating 1-4) with optimistic & asynchronous UI responsiveness
   const handleGrade = useCallback(
-    async (rating: FSRSRating) => {
-      if (!currentCard || !revealReady || grading.current) return;
-      grading.current = true;
+    (rating: FSRSRating) => {
+      if (!currentCard || !revealReady || isGrading) return;
       setIsGrading(true);
 
       const durationMs = Date.now() - startTime;
       const cardToGrade = currentCard;
 
-      try {
-        // Await server response (res) before advancing card
-        await gradeCard(cardToGrade.id, rating, durationMs);
+      // 1. Advance UI immediately (asynchronous & non-blocking)
+      setCompletedCount((prev) => prev + 1);
+      setSlideDirection(1);
+      setIsFlipped(false);
+      setTypedInput('');
+      setTypedSubmitted(false);
+      setSelectedOption(null);
+      setSentenceInput('');
+      setIsCheckingSentence(false);
+      setSentenceResult(null);
+      setStartTime(Date.now());
 
-        setCompletedCount((prev) => prev + 1);
-        setSlideDirection(1);
-        setIsFlipped(false);
-        setTypedInput('');
-        setTypedSubmitted(false);
-        setSelectedOption(null);
-        setStartTime(Date.now());
-
-        if (currentIndex < queue.length - 1) {
-          setCurrentIndex((prev) => prev + 1);
-        } else {
-          setCurrentIndex(queue.length);
-          triggerConfetti();
-          void refresh().catch(() => {});
-        }
-      } catch (err) {
-        notify.error('Lỗi đồng bộ ôn tập', (err as Error).message || 'Không thể lưu lượt ôn lên máy chủ.');
-      } finally {
-        grading.current = false;
-        setIsGrading(false);
+      if (currentIndex < queue.length - 1) {
+        setCurrentIndex((prev) => prev + 1);
+      } else {
+        setCurrentIndex(queue.length);
+        triggerConfetti();
+        void refresh().catch(() => {});
       }
+
+      // 2. Fire gradeCard asynchronously in background
+      void gradeCard(cardToGrade.id, rating, durationMs)
+        .catch((err) => {
+          notify.error('Lỗi đồng bộ ôn tập', (err as Error).message || 'Không thể lưu lượt ôn lên máy chủ.');
+        })
+        .finally(() => {
+          setIsGrading(false);
+        });
     },
-    [currentCard, revealReady, startTime, gradeCard, currentIndex, queue.length, refresh, notify]
+    [currentCard, revealReady, isGrading, startTime, gradeCard, currentIndex, queue.length, refresh, notify]
   );
 
   const handleUndo = useCallback(async () => {
@@ -383,7 +403,8 @@ export function StudyConsole() {
     try {
       if (await undoLastReview()) {
         setSlideDirection(-1); setCurrentIndex(i => Math.max(0, i - 1));
-        setCompletedCount(c => Math.max(0, c - 1)); setIsFlipped(false); setSelectedOption(null); setStartTime(Date.now());
+        setCompletedCount(c => Math.max(0, c - 1)); setIsFlipped(false); setSelectedOption(null);
+        setSentenceInput(''); setIsCheckingSentence(false); setSentenceResult(null); setStartTime(Date.now());
       }
     } catch { /* The server explains expired/conflicting undo via the app banner. */ }
     finally { grading.current = false; }
@@ -404,21 +425,49 @@ export function StudyConsole() {
     [isFlipped, selectedOption, settings.autoPronounce, currentVocab, settings.englishDialect]
   );
 
+  // Handle Sentence Submit: evaluate grammar via backend service
+  const handleSentenceSubmit = useCallback(async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!sentenceInput.trim() || isCheckingSentence || !currentVocab) return;
+    setIsCheckingSentence(true);
+    try {
+      const res = await checkSentenceApi({
+        sentence: sentenceInput.trim(),
+        word: currentVocab.word,
+        meaningVi: currentVocab.meaningVi,
+        partOfSpeech: currentVocab.partOfSpeech,
+        dialect: currentVocab.dialect || settings.englishDialect,
+      });
+      setSentenceResult(res);
+      setIsFlipped(true);
+      if (settings.autoPronounce) {
+        speakWord(currentVocab.word, currentVocab.dialect || settings.englishDialect);
+      }
+    } catch (err) {
+      notify.error('Lỗi kiểm tra câu', (err as Error).message || 'Không thể kiểm tra ngữ pháp lúc này.');
+    } finally {
+      setIsCheckingSentence(false);
+    }
+  }, [sentenceInput, isCheckingSentence, currentVocab, settings.englishDialect, settings.autoPronounce, notify]);
+
   // Keyboard shortcut listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is typing in input and hasn't submitted yet
+      // Don't intercept if user is typing in input or textarea and hasn't submitted yet
       if (
-        document.activeElement?.tagName === 'INPUT' &&
-        !typedSubmitted &&
-        mode === 'typed'
+        (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') &&
+        !isFlipped
       ) {
+        if (mode === 'sentence' && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          void handleSentenceSubmit();
+        }
         return;
       }
 
       if (e.code === 'Space') {
-        // In mcq or typed before submit, Space shouldn't blindly flip the card
-        if (!isFlipped && (mode === 'mcq' || (mode === 'typed' && !typedSubmitted))) {
+        // In mcq, typed, or sentence before submit, Space shouldn't blindly flip the card
+        if (!isFlipped && (mode === 'mcq' || (mode === 'typed' && !typedSubmitted) || mode === 'sentence')) {
           return;
         }
         e.preventDefault();
@@ -452,7 +501,7 @@ export function StudyConsole() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFlipped, handleFlip, handleGrade, canUndo, handleUndo, mode, typedSubmitted, mcqOptions, handleSelectOption]);
+  }, [isFlipped, handleFlip, handleGrade, canUndo, handleUndo, mode, typedSubmitted, mcqOptions, handleSelectOption, handleSentenceSubmit]);
 
   // Handle Typed Submit: Validate and then flip card to reveal full details
   const handleTypedSubmit = (e: React.FormEvent) => {
@@ -609,13 +658,17 @@ export function StudyConsole() {
           >
             <Clock className="w-3.5 h-3.5 text-emerald-600" />
             <span>Đến hạn ôn</span>
-            <span
+            <motion.span
+              key={`due-${scopeStats.due}`}
+              initial={{ scale: 1.25, opacity: 0.6 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
               className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                 studyScope === 'due' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200/80 text-slate-600'
               }`}
             >
               {scopeStats.due}
-            </span>
+            </motion.span>
           </button>
 
           <button
@@ -631,13 +684,17 @@ export function StudyConsole() {
           >
             <Sparkles className="w-3.5 h-3.5 text-brand-primary fill-brand-primary/20" />
             <span>Từ mới chưa học</span>
-            <span
+            <motion.span
+              key={`new-${scopeStats.new}`}
+              initial={{ scale: 1.25, opacity: 0.6 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
               className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                 studyScope === 'new' ? 'bg-brand-primarySoft text-brand-primary' : 'bg-slate-200/80 text-slate-600'
               }`}
             >
               {scopeStats.new}
-            </span>
+            </motion.span>
           </button>
 
           <button
@@ -653,13 +710,17 @@ export function StudyConsole() {
           >
             <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
             <span>Chưa đến hạn · Học sớm</span>
-            <span
+            <motion.span
+              key={`ahead-${scopeStats.ahead}`}
+              initial={{ scale: 1.25, opacity: 0.6 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
               className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                 studyScope === 'ahead' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200/80 text-slate-600'
               }`}
             >
               {scopeStats.ahead}
-            </span>
+            </motion.span>
           </button>
 
           <button
@@ -675,13 +736,17 @@ export function StudyConsole() {
           >
             <Layers className="w-3.5 h-3.5 text-indigo-500" />
             <span>Tất cả thẻ</span>
-            <span
+            <motion.span
+              key={`all-${scopeStats.all}`}
+              initial={{ scale: 1.25, opacity: 0.6 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
               className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                 studyScope === 'all' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200/80 text-slate-600'
               }`}
             >
               {scopeStats.all}
-            </span>
+            </motion.span>
           </button>
         </div>
 
@@ -712,9 +777,16 @@ export function StudyConsole() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-1 text-xs">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1 font-medium text-text-secondary">
-            <span className="font-bold text-brand-ink">
-              Thẻ {currentIndex + 1}
-            </span>
+            <span>Thẻ</span>
+            <motion.span
+              key={`curr-${currentIndex}`}
+              initial={{ y: -4, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.15 }}
+              className="font-bold text-brand-ink inline-block"
+            >
+              {currentIndex + 1}
+            </motion.span>
             <span>/</span>
             <span>{queue.length}</span>
             <span className="px-2 py-0.2 rounded-full text-[10px] font-bold uppercase tracking-wider bg-brand-primarySoft text-brand-primary">
@@ -743,13 +815,14 @@ export function StudyConsole() {
         </div>
 
         {/* Study Mode Selector */}
-        <div className="flex items-center bg-surface-base p-0.5 rounded-lg border border-slate-200/80 shadow-2xs">
-          {(['flashcard', 'typed', 'mcq', 'listening'] as StudyMode[]).map((m) => {
+        <div className="flex items-center bg-surface-base p-0.5 rounded-lg border border-slate-200/80 shadow-2xs overflow-x-auto">
+          {(['flashcard', 'typed', 'mcq', 'listening', 'sentence'] as StudyMode[]).map((m) => {
             const labels: Record<StudyMode, string> = {
               flashcard: 'Lật thẻ',
               typed: 'Gõ từ',
               mcq: 'Trắc nghiệm',
               listening: 'Luyện nghe',
+              sentence: 'Đặt câu',
             };
             const isActive = mode === m;
             return (
@@ -761,8 +834,11 @@ export function StudyConsole() {
                   setTypedSubmitted(false);
                   setTypedInput('');
                   setSelectedOption(null);
+                  setSentenceInput('');
+                  setIsCheckingSentence(false);
+                  setSentenceResult(null);
                 }}
-                className={`relative px-2.5 py-0.5 text-xs font-semibold rounded-md transition-colors ${
+                className={`relative px-2.5 py-0.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
                   isActive ? 'text-white' : 'text-text-secondary hover:text-brand-ink'
                 }`}
               >
@@ -1012,6 +1088,76 @@ export function StudyConsole() {
                       </div>
                     </div>
                   )}
+
+                  {/* Mode 5: Sentence Writing -> Prompt to use target word in a sentence or phrase */}
+                  {mode === 'sentence' && (
+                    <div className="w-full max-w-lg space-y-3.5" onClick={(e) => e.stopPropagation()}>
+                      <div className="space-y-1.5 text-center">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200/80 text-[11px] font-bold text-indigo-700">
+                          <PenTool className="w-3 h-3" />
+                          <span>Luyện đặt câu / Cụm từ</span>
+                          <span className="text-text-secondary font-medium">({currentVocab.partOfSpeech})</span>
+                        </div>
+
+                        <div className="flex items-center justify-center gap-2 pt-1">
+                          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-brand-ink">
+                            {currentVocab.word}
+                          </h2>
+                          <AudioButton
+                            text={currentVocab.word}
+                            dialect={currentVocab.dialect || settings.englishDialect}
+                            size="sm"
+                          />
+                        </div>
+                        <p className="text-xs font-mono text-slate-400">
+                          {currentVocab.phonetic}
+                        </p>
+                        <div className="mt-1 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200/70 text-xs text-slate-700 max-w-md mx-auto">
+                          <span className="font-semibold text-brand-primary">Gợi ý nghĩa: </span>
+                          <span>{currentVocab.meaningVi}</span>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleSentenceSubmit} className="space-y-2.5 pt-1">
+                        <div className="relative">
+                          <textarea
+                            autoFocus
+                            rows={3}
+                            value={sentenceInput}
+                            onChange={(e) => setSentenceInput(e.target.value)}
+                            placeholder={`Đặt một câu hoặc một cụm từ tiếng Anh có chứa "${currentVocab.word}"...`}
+                            className="w-full p-3 text-xs sm:text-sm border-2 border-slate-200 rounded-control focus:outline-none focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 tracking-normal shadow-xs resize-none font-medium leading-relaxed"
+                          />
+                          <div className="flex items-center justify-between text-[11px] text-text-secondary px-1 pt-0.5">
+                            <span className="text-[10px] text-slate-400">
+                              Phím tắt: <strong>Ctrl + Enter</strong> để gửi
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-500">
+                              {sentenceInput.trim().split(/\s+/).filter(Boolean).length} từ
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={!sentenceInput.trim() || isCheckingSentence}
+                          className="w-full py-2.5 bg-gradient-to-r from-brand-primary to-indigo-600 hover:from-brand-primaryHover hover:to-indigo-700 disabled:opacity-50 text-white rounded-control text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 active:scale-[0.98]"
+                        >
+                          {isCheckingSentence ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>Đang phân tích & kiểm tra ngữ pháp AI...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-4 h-4" />
+                              <span>Kiểm tra ngữ pháp & Phân tích câu</span>
+                            </>
+                          )}
+                        </button>
+                      </form>
+                    </div>
+                  )}
                 </div>
 
                 {/* Front Footer: Hint & Flip Button */}
@@ -1040,6 +1186,25 @@ export function StudyConsole() {
                       <span className="text-[11px] text-text-secondary flex items-center gap-1">
                         <Keyboard className="w-3.5 h-3.5" />
                         <span>Nhấn <strong>Enter</strong> để kiểm tra đáp án</span>
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFlip();
+                        }}
+                        className="px-3 py-1.5 text-xs text-text-secondary hover:text-brand-ink hover:bg-slate-100 rounded-control font-medium transition-all flex items-center gap-1.5"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Bỏ qua & Xem đáp án</span>
+                      </button>
+                    </>
+                  ) : mode === 'sentence' ? (
+                    <>
+                      <span className="text-[11px] text-text-secondary flex items-center gap-1">
+                        <Keyboard className="w-3.5 h-3.5" />
+                        <span>Nhấn <strong>Ctrl + Enter</strong> để kiểm tra ngữ pháp</span>
                       </span>
 
                       <button
@@ -1190,6 +1355,180 @@ export function StudyConsole() {
                     </motion.div>
                   )}
 
+                  {/* Sentence verification and improvement banner if in sentence mode */}
+                  {mode === 'sentence' && (
+                    <motion.div
+                      initial={{ scale: 0.96, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="p-3.5 rounded-card border bg-slate-50/80 shadow-xs space-y-3"
+                    >
+                      {sentenceResult ? (
+                        <>
+                          {/* Header: Score & Target word status */}
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-200/70">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[11px] font-extrabold flex items-center gap-1 ${
+                                  sentenceResult.score >= 85
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : sentenceResult.score >= 60
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-rose-100 text-rose-800'
+                                }`}
+                              >
+                                <span>Điểm: {sentenceResult.score}/100</span>
+                              </span>
+                              <span className="text-[11px] font-medium text-slate-500">
+                                {sentenceResult.analysis?.sentenceType === 'phrase' ? 'Cụm từ' : 'Câu hoàn chỉnh'}
+                              </span>
+                            </div>
+
+                            <div className="text-xs font-semibold">
+                              {sentenceResult.hasTargetWord ? (
+                                <span className="text-emerald-700 flex items-center gap-1">
+                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                  <span>Đã dùng từ: <strong>{sentenceResult.matchedWord}</strong></span>
+                                </span>
+                              ) : (
+                                <span className="text-rose-700 flex items-center gap-1">
+                                  <X className="w-3.5 h-3.5 stroke-[3]" />
+                                  <span>Chưa có từ: <strong>{currentVocab.word}</strong></span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Pedagogical feedback */}
+                          <p className="text-xs text-slate-700 leading-relaxed">
+                            {sentenceResult.feedback}
+                          </p>
+
+                          {/* User input display */}
+                          <div className="p-2.5 rounded-lg bg-surface-base border border-slate-200 text-xs space-y-1.5">
+                            <div className="flex items-center justify-between text-slate-500 text-[11px] font-medium">
+                              <span>Nội dung bạn đã nhập:</span>
+                              <AudioButton text={sentenceInput} dialect={settings.englishDialect} size="sm" />
+                            </div>
+                            <p className="text-slate-800 italic font-serif">"{sentenceInput}"</p>
+
+                            {/* Corrected sentence if errors existed */}
+                            {sentenceResult.correctedSentence &&
+                              sentenceResult.correctedSentence.toLowerCase() !== sentenceInput.toLowerCase() && (
+                                <div className="pt-2 border-t border-slate-100 space-y-1">
+                                  <div className="flex items-center justify-between text-emerald-800 font-semibold text-[11px]">
+                                    <span>Câu chuẩn đã sửa lỗi:</span>
+                                    <AudioButton
+                                      text={sentenceResult.correctedSentence}
+                                      dialect={settings.englishDialect}
+                                      size="sm"
+                                    />
+                                  </div>
+                                  <p className="text-emerald-950 font-medium bg-emerald-50/80 p-2 rounded border border-emerald-200/70 font-serif">
+                                    "{sentenceResult.correctedSentence}"
+                                  </p>
+                                </div>
+                              )}
+                          </div>
+
+                          {/* Error breakdown pills */}
+                          {sentenceResult.errors.length > 0 && (
+                            <div className="space-y-1.5">
+                              <span className="text-[11px] font-bold uppercase tracking-wider text-rose-700 flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" />
+                                <span>Chi tiết điểm cần lưu ý ({sentenceResult.errors.length})</span>
+                              </span>
+                              <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                                {sentenceResult.errors.map((err, i) => (
+                                  <div
+                                    key={i}
+                                    className="p-2 rounded bg-rose-50/70 border border-rose-200/60 text-[11px] text-rose-900 space-y-0.5"
+                                  >
+                                    <div className="font-semibold">{err.message}</div>
+                                    {err.replacements.length > 0 && (
+                                      <div className="text-slate-600 flex items-center gap-1">
+                                        <span>Gợi ý thay thế:</span>
+                                        <span className="font-bold text-emerald-700">
+                                          {err.replacements.join(', ')}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Improvements: Collocations and Native Sentences */}
+                          {(sentenceResult.improvedPhrases.length > 0 ||
+                            sentenceResult.improvedSentences.length > 0) && (
+                            <div className="pt-2 border-t border-slate-200/70 space-y-2">
+                              {sentenceResult.improvedPhrases.length > 0 && (
+                                <div className="space-y-1">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3" />
+                                    <span>Gợi ý cụm từ hay (Collocations / Phrases)</span>
+                                  </span>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {sentenceResult.improvedPhrases.map((phrase, idx) => (
+                                      <div
+                                        key={idx}
+                                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-indigo-50 border border-indigo-200/80 text-[11px] text-indigo-900 font-medium"
+                                      >
+                                        <span>{phrase}</span>
+                                        <AudioButton text={phrase} dialect={settings.englishDialect} size="sm" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {sentenceResult.improvedSentences.length > 0 && (
+                                <div className="space-y-1">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-brand-primary flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3" />
+                                    <span>Gợi ý câu chuẩn bản xứ</span>
+                                  </span>
+                                  <div className="space-y-1">
+                                    {sentenceResult.improvedSentences.map((sent, idx) => (
+                                      <div
+                                        key={idx}
+                                        className="flex items-center justify-between p-2 rounded-md bg-brand-primarySoft/30 border border-brand-primary/20 text-xs text-brand-ink"
+                                      >
+                                        <span className="font-serif italic">"{sent}"</span>
+                                        <AudioButton text={sent} dialect={settings.englishDialect} size="sm" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Recommended Rating Banner */}
+                          <div className="flex items-center justify-between text-[11px] pt-1 text-slate-500 border-t border-slate-200/60">
+                            <span>Gợi ý đánh giá FSRS:</span>
+                            <span className="font-bold text-brand-primary">
+                              Phím {sentenceResult.suggestedRating} (
+                              {sentenceResult.suggestedRating === 1
+                                ? 'Quên'
+                                : sentenceResult.suggestedRating === 2
+                                ? 'Khó'
+                                : sentenceResult.suggestedRating === 3
+                                ? 'Tốt'
+                                : 'Dễ'}
+                              )
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-xs text-slate-500 flex items-center gap-2">
+                          <HelpCircle className="w-4 h-4 text-slate-400" />
+                          <span>Bạn đã bỏ qua phần đặt câu. Hãy xem định nghĩa và câu mẫu bên dưới để học từ này nhé!</span>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+
                   {/* Primary Meaning in Vietnamese */}
                   <div className="space-y-0.5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-brand-primary">
@@ -1254,6 +1593,7 @@ export function StudyConsole() {
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {intervalPreviews.map((preview) => {
+                      const isAiSuggested = mode === 'sentence' && sentenceResult?.suggestedRating === preview.rating;
                       const ratingStyles = {
                         1: 'hover:border-rose-400 hover:bg-rose-50/70 text-rose-700 bg-rose-50/20',
                         2: 'hover:border-amber-400 hover:bg-amber-50/70 text-amber-700 bg-amber-50/20',
@@ -1268,12 +1608,23 @@ export function StudyConsole() {
                           whileTap={{ scale: 0.96 }}
                           disabled={!revealReady || isGrading}
                           onClick={() => handleGrade(preview.rating)}
-                          className={`p-2.5 rounded-control border border-slate-200 text-left transition-all shadow-xs flex flex-col justify-between ${
+                          className={`relative p-2.5 rounded-control border text-left transition-all shadow-xs flex flex-col justify-between ${
                             ratingStyles[preview.rating]
+                          } ${
+                            isAiSuggested
+                              ? 'border-brand-primary ring-2 ring-brand-primary/70 shadow-sm'
+                              : 'border-slate-200'
                           } ${!revealReady || isGrading ? 'opacity-60 cursor-not-allowed' : ''}`}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs">{preview.label}</span>
+                            <div className="flex items-center gap-1">
+                              <span className="font-bold text-xs">{preview.label}</span>
+                              {isAiSuggested && (
+                                <span className="px-1 py-0.2 text-[8px] bg-brand-primary text-white rounded font-bold uppercase tracking-wider">
+                                  AI
+                                </span>
+                              )}
+                            </div>
                             <kbd className="px-1.5 py-0.2 text-[10px] font-mono bg-white border rounded text-slate-500 font-bold shadow-2xs">
                               {preview.rating}
                             </kbd>

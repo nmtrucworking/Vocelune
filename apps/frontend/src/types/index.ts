@@ -105,7 +105,35 @@ export interface ReviewLog {
   voidedAt?: string;
 }
 
-export type StudyMode = 'flashcard' | 'typed' | 'mcq' | 'listening';
+export type StudyMode = 'flashcard' | 'typed' | 'mcq' | 'listening' | 'sentence';
+
+export interface SentenceCheckError {
+  message: string;
+  shortMessage?: string;
+  offset: number;
+  length: number;
+  replacements: string[];
+  ruleId?: string;
+}
+
+export interface SentenceCheckResult {
+  isValid: boolean;
+  hasTargetWord: boolean;
+  matchedWord?: string;
+  grammarCorrect: boolean;
+  score: number;
+  suggestedRating: FSRSRating;
+  feedback: string;
+  errors: SentenceCheckError[];
+  correctedSentence: string;
+  improvedSentences: string[];
+  improvedPhrases: string[];
+  analysis?: {
+    sentenceType?: 'sentence' | 'phrase';
+    wordCount?: number;
+    provider?: string;
+  };
+}
 
 export interface TestQuestion {
   direction?: CardTemplate;
