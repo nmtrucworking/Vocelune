@@ -21,6 +21,8 @@ import {
   Loader2,
   AlertCircle,
   PenTool,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useVocelune } from '@/context/VoceluneContext';
 import { useNotification } from '@/context/NotificationContext';
@@ -241,6 +243,7 @@ export function StudyConsole() {
   const [sentenceInput, setSentenceInput] = useState('');
   const [isCheckingSentence, setIsCheckingSentence] = useState(false);
   const [sentenceResult, setSentenceResult] = useState<SentenceCheckResult | null>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   // Session completion stats
   const [completedCount, setCompletedCount] = useState(0);
@@ -268,6 +271,7 @@ export function StudyConsole() {
       setSentenceInput('');
       setIsCheckingSentence(false);
       setSentenceResult(null);
+      setShowErrorDetails(false);
       setStartTime(Date.now());
       lastSessionConfigRef.current = `${scope}::${selectedTopicGroup}::${selectedDeckId}::${newSortOrder}`;
     },
@@ -375,6 +379,7 @@ export function StudyConsole() {
       setSentenceInput('');
       setIsCheckingSentence(false);
       setSentenceResult(null);
+      setShowErrorDetails(false);
       setStartTime(Date.now());
 
       if (currentIndex < queue.length - 1) {
@@ -404,7 +409,7 @@ export function StudyConsole() {
       if (await undoLastReview()) {
         setSlideDirection(-1); setCurrentIndex(i => Math.max(0, i - 1));
         setCompletedCount(c => Math.max(0, c - 1)); setIsFlipped(false); setSelectedOption(null);
-        setSentenceInput(''); setIsCheckingSentence(false); setSentenceResult(null); setStartTime(Date.now());
+        setSentenceInput(''); setIsCheckingSentence(false); setSentenceResult(null); setShowErrorDetails(false); setStartTime(Date.now());
       }
     } catch { /* The server explains expired/conflicting undo via the app banner. */ }
     finally { grading.current = false; }
@@ -439,6 +444,7 @@ export function StudyConsole() {
         dialect: currentVocab.dialect || settings.englishDialect,
       });
       setSentenceResult(res);
+      setShowErrorDetails(false);
       setIsFlipped(true);
       if (settings.autoPronounce) {
         speakWord(currentVocab.word, currentVocab.dialect || settings.englishDialect);
@@ -642,28 +648,31 @@ export function StudyConsole() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-3.5">
-      {/* Scope Switcher: Đến hạn vs Từ mới vs Học sớm vs Tất cả */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 bg-slate-100/80 border border-slate-200/90 rounded-xl shadow-2xs">
-        <div className="flex items-center gap-1.5 flex-wrap">
+      {/* Scope Switcher: 2x2 Grid on Mobile, 4-col on Desktop for Perfect Symmetry */}
+      <div className="space-y-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 bg-slate-100/90 border border-slate-200/80 rounded-2xl shadow-2xs">
           <button
+            type="button"
             onClick={() => {
               setStudyScope('due');
               setSlideDirection(1);
             }}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
               studyScope === 'due'
-                ? 'bg-white text-emerald-800 shadow-2xs border border-emerald-200/80'
-                : 'text-text-secondary hover:text-brand-ink'
+                ? 'bg-white text-emerald-800 shadow-2xs border border-emerald-200/90 ring-1 ring-emerald-500/10'
+                : 'text-text-secondary hover:text-brand-ink hover:bg-white/50'
             }`}
           >
-            <Clock className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Đến hạn ôn</span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="truncate">Đến hạn ôn</span>
+            </div>
             <motion.span
               key={`due-${scopeStats.due}`}
               initial={{ scale: 1.25, opacity: 0.6 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              className={`ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold shrink-0 ${
                 studyScope === 'due' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200/80 text-slate-600'
               }`}
             >
@@ -672,24 +681,27 @@ export function StudyConsole() {
           </button>
 
           <button
+            type="button"
             onClick={() => {
               setStudyScope('new');
               setSlideDirection(1);
             }}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
               studyScope === 'new'
-                ? 'bg-white text-brand-primary shadow-2xs border border-brand-primary/30'
-                : 'text-text-secondary hover:text-brand-ink'
+                ? 'bg-white text-brand-primary shadow-2xs border border-brand-primary/30 ring-1 ring-brand-primary/10'
+                : 'text-text-secondary hover:text-brand-ink hover:bg-white/50'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5 text-brand-primary fill-brand-primary/20" />
-            <span>Từ mới chưa học</span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Sparkles className="w-3.5 h-3.5 text-brand-primary fill-brand-primary/20 shrink-0" />
+              <span className="truncate">Từ mới</span>
+            </div>
             <motion.span
               key={`new-${scopeStats.new}`}
               initial={{ scale: 1.25, opacity: 0.6 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              className={`ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold shrink-0 ${
                 studyScope === 'new' ? 'bg-brand-primarySoft text-brand-primary' : 'bg-slate-200/80 text-slate-600'
               }`}
             >
@@ -698,24 +710,27 @@ export function StudyConsole() {
           </button>
 
           <button
+            type="button"
             onClick={() => {
               setStudyScope('ahead');
               setSlideDirection(1);
             }}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
               studyScope === 'ahead'
-                ? 'bg-white text-amber-900 shadow-2xs border border-amber-300'
-                : 'text-text-secondary hover:text-brand-ink'
+                ? 'bg-white text-amber-900 shadow-2xs border border-amber-300 ring-1 ring-amber-500/10'
+                : 'text-text-secondary hover:text-brand-ink hover:bg-white/50'
             }`}
           >
-            <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-            <span>Chưa đến hạn · Học sớm</span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+              <span className="truncate">Học sớm</span>
+            </div>
             <motion.span
               key={`ahead-${scopeStats.ahead}`}
               initial={{ scale: 1.25, opacity: 0.6 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              className={`ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold shrink-0 ${
                 studyScope === 'ahead' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200/80 text-slate-600'
               }`}
             >
@@ -724,24 +739,27 @@ export function StudyConsole() {
           </button>
 
           <button
+            type="button"
             onClick={() => {
               setStudyScope('all');
               setSlideDirection(1);
             }}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
               studyScope === 'all'
-                ? 'bg-white text-indigo-900 shadow-2xs border border-indigo-200/80'
-                : 'text-text-secondary hover:text-brand-ink'
+                ? 'bg-white text-indigo-900 shadow-2xs border border-indigo-200/80 ring-1 ring-indigo-500/10'
+                : 'text-text-secondary hover:text-brand-ink hover:bg-white/50'
             }`}
           >
-            <Layers className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Tất cả thẻ</span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Layers className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span className="truncate">Tất cả thẻ</span>
+            </div>
             <motion.span
               key={`all-${scopeStats.all}`}
               initial={{ scale: 1.25, opacity: 0.6 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              className={`ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold shrink-0 ${
                 studyScope === 'all' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200/80 text-slate-600'
               }`}
             >
@@ -750,59 +768,63 @@ export function StudyConsole() {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-          {studyScope === 'new' && (
-            <button
-              type="button"
-              onClick={() => setNewSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'))}
-              className="text-[10px] font-semibold text-brand-primary bg-brand-primarySoft/80 hover:bg-brand-primarySoft px-2.5 py-1 rounded-lg border border-brand-primary/20 inline-flex items-center gap-1 transition-colors shadow-2xs"
-              title="Nhấn để đổi thứ tự ưu tiên học từ mới"
-            >
-              <Sparkles className="w-3 h-3 text-brand-primary" />
-              <span>{newSortOrder === 'newest' ? 'Ưu tiên: Từ vừa thêm trước' : 'Ưu tiên: Từ cũ trước'}</span>
-            </button>
-          )}
+        {/* Dynamic scope auxiliary badges */}
+        {(studyScope === 'new' || studyScope === 'ahead') && (
+          <div className="flex items-center justify-end px-1">
+            {studyScope === 'new' && (
+              <button
+                type="button"
+                onClick={() => setNewSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'))}
+                className="text-[10px] font-semibold text-brand-primary bg-brand-primarySoft/80 hover:bg-brand-primarySoft px-2.5 py-0.5 rounded-lg border border-brand-primary/20 inline-flex items-center gap-1 transition-colors shadow-2xs"
+                title="Nhấn để đổi thứ tự ưu tiên học từ mới"
+              >
+                <Sparkles className="w-3 h-3 text-brand-primary" />
+                <span>{newSortOrder === 'newest' ? 'Ưu tiên: Từ vừa thêm trước' : 'Ưu tiên: Từ cũ trước'}</span>
+              </button>
+            )}
 
-          {studyScope === 'ahead' && (
-            <span className="text-[10px] text-amber-700 font-medium px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200/60 inline-flex items-center gap-1">
-              <Zap className="w-2.5 h-2.5 text-amber-600" />
-              <span>Học trước hạn: FSRS tự động cập nhật độ nhớ</span>
-            </span>
-          )}
-        </div>
+            {studyScope === 'ahead' && (
+              <span className="text-[10px] text-amber-700 font-medium px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200/60 inline-flex items-center gap-1">
+                <Zap className="w-2.5 h-2.5 text-amber-600" />
+                <span>Học trước hạn: FSRS tự động cập nhật độ nhớ</span>
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Top Header: Progress & Mode Switcher */}
-      {/* Header controls: Topic selection & Mode selector */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-1 text-xs">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1 font-medium text-text-secondary">
-            <span>Thẻ</span>
-            <motion.span
-              key={`curr-${currentIndex}`}
-              initial={{ y: -4, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.15 }}
-              className="font-bold text-brand-ink inline-block"
-            >
-              {currentIndex + 1}
-            </motion.span>
-            <span>/</span>
-            <span>{queue.length}</span>
-            <span className="px-2 py-0.2 rounded-full text-[10px] font-bold uppercase tracking-wider bg-brand-primarySoft text-brand-primary">
-              {currentCard.state}
-            </span>
-          </div>
+      {/* Header controls: Progress info & Mode tabs */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2 px-1 text-xs">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 font-medium text-text-secondary">
+              <span>Thẻ</span>
+              <motion.span
+                key={`curr-${currentIndex}`}
+                initial={{ y: -4, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 0.15 }}
+                className="font-bold text-brand-ink inline-block"
+              >
+                {currentIndex + 1}
+              </motion.span>
+              <span>/</span>
+              <span>{queue.length}</span>
+              <span className="px-2 py-0.2 rounded-full text-[10px] font-bold uppercase tracking-wider bg-brand-primarySoft text-brand-primary">
+                {currentCard.state}
+              </span>
+            </div>
 
-          {/* Quick topic group selector */}
-          <div className="flex items-center gap-1 pl-2 border-l border-slate-200">
+            <div className="h-3 w-px bg-slate-200 mx-0.5" />
+
+            {/* Quick topic group selector */}
             <select
               value={selectedTopicGroup}
               onChange={(e) => {
                 setSelectedTopicGroup(e.target.value);
                 setSelectedDeckId('all');
               }}
-              className="px-2 py-0.5 text-[11px] bg-surface-base border border-slate-200 rounded font-medium text-slate-700 focus:outline-none focus:border-brand-primary"
+              className="max-w-[130px] sm:max-w-[180px] truncate px-2 py-0.5 text-[11px] bg-surface-base border border-slate-200 rounded-lg font-medium text-slate-700 focus:outline-none focus:border-brand-primary"
             >
               <option value="all">Tất cả nhóm</option>
               {availableGroups.map((g) => (
@@ -814,22 +836,22 @@ export function StudyConsole() {
           </div>
         </div>
 
-        {/* Study Mode Selector */}
-        <div className="flex items-center bg-surface-base p-0.5 rounded-lg border border-slate-200/80 shadow-2xs overflow-x-auto">
-          {(['flashcard', 'typed', 'mcq', 'listening', 'sentence'] as StudyMode[]).map((m) => {
-            const labels: Record<StudyMode, string> = {
-              flashcard: 'Lật thẻ',
-              typed: 'Gõ từ',
-              mcq: 'Trắc nghiệm',
-              listening: 'Luyện nghe',
-              sentence: 'Đặt câu',
-            };
-            const isActive = mode === m;
+        {/* Study Mode Selector: Modern Horizontal Tabs with Icons */}
+        <div className="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 shadow-2xs overflow-x-auto no-scrollbar scroll-smooth gap-1">
+          {([
+            { id: 'flashcard' as StudyMode, label: 'Lật thẻ', icon: Eye },
+            { id: 'typed' as StudyMode, label: 'Gõ từ', icon: Keyboard },
+            { id: 'mcq' as StudyMode, label: 'Trắc nghiệm', icon: CheckCircle2 },
+            { id: 'listening' as StudyMode, label: 'Luyện nghe', icon: Volume2 },
+            { id: 'sentence' as StudyMode, label: 'Đặt câu', icon: PenTool },
+          ]).map(({ id, label, icon: ModeIcon }) => {
+            const isActive = mode === id;
             return (
               <button
-                key={m}
+                key={id}
+                type="button"
                 onClick={() => {
-                  setMode(m);
+                  setMode(id);
                   setIsFlipped(false);
                   setTypedSubmitted(false);
                   setTypedInput('');
@@ -837,19 +859,21 @@ export function StudyConsole() {
                   setSentenceInput('');
                   setIsCheckingSentence(false);
                   setSentenceResult(null);
+                  setShowErrorDetails(false);
                 }}
-                className={`relative px-2.5 py-0.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                  isActive ? 'text-white' : 'text-text-secondary hover:text-brand-ink'
+                className={`relative flex-1 min-w-[70px] sm:min-w-0 py-1.5 px-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 sm:shrink ${
+                  isActive ? 'text-white' : 'text-slate-600 hover:text-brand-ink hover:bg-white/60'
                 }`}
               >
                 {isActive && (
                   <motion.div
                     layoutId="studyModePill"
-                    className="absolute inset-0 bg-brand-primary rounded-md shadow-2xs"
+                    className="absolute inset-0 bg-brand-primary rounded-lg shadow-sm"
                     transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                   />
                 )}
-                <span className="relative z-10">{labels[m]}</span>
+                <ModeIcon className="w-3.5 h-3.5 relative z-10 shrink-0" />
+                <span className="relative z-10 text-[11px] sm:text-xs">{label}</span>
               </button>
             );
           })}
@@ -867,7 +891,7 @@ export function StudyConsole() {
       </div>
 
       {/* 3D Flappable Flashcard Canvas */}
-      <div className="relative min-h-[320px] w-full" style={{ perspective: 1200 }}>
+      <div className="relative w-full" style={{ perspective: 1200 }}>
         <AnimatePresence mode="wait" custom={slideDirection}>
           <motion.div
             key={currentCard.id}
@@ -883,7 +907,7 @@ export function StudyConsole() {
               animate={{ rotateY: isFlipped ? 180 : 0 }}
               transition={{ duration: 0.45, ease: [0.23, 1, 0.32, 1] }}
               style={{ transformStyle: 'preserve-3d' }}
-              className={`relative w-full min-h-[320px] rounded-card shadow-card ${
+              className={`w-full grid grid-cols-1 grid-rows-1 rounded-card shadow-card ${
                 !isFlipped && (mode === 'flashcard' || mode === 'listening')
                   ? 'cursor-pointer'
                   : ''
@@ -901,7 +925,7 @@ export function StudyConsole() {
                   backfaceVisibility: 'hidden',
                   WebkitBackfaceVisibility: 'hidden',
                 }}
-                className={`absolute inset-0 bg-surface-base border border-slate-200/90 rounded-card p-4 sm:p-5 flex flex-col justify-between select-none ${
+                className={`col-start-1 row-start-1 w-full min-h-[320px] bg-surface-base border border-slate-200/90 rounded-card p-4 sm:p-5 flex flex-col justify-between select-none ${
                   isFlipped ? 'pointer-events-none' : ''
                 }`}
               >
@@ -1250,7 +1274,7 @@ export function StudyConsole() {
                   transform: 'rotateY(180deg)',
                 }}
                 onClick={(e) => e.stopPropagation()}
-                className={`absolute inset-0 bg-surface-base border-2 border-brand-primary/40 rounded-card p-4 sm:p-5 flex flex-col justify-between select-none shadow-elevated ${
+                className={`col-start-1 row-start-1 w-full min-h-[320px] bg-surface-base border-2 border-brand-primary/40 rounded-card p-4 sm:p-5 flex flex-col justify-between select-none shadow-elevated ${
                   !isFlipped ? 'pointer-events-none' : ''
                 }`}
               >
@@ -1293,7 +1317,7 @@ export function StudyConsole() {
                 </div>
 
                 {/* Back Revealed Knowledge Body */}
-                <div className="py-4 flex-1 space-y-3.5 text-left overflow-y-auto">
+                <div className="py-3 flex-1 space-y-3.5 text-left">
                   {/* MCQ verification banner if in MCQ mode */}
                   {mode === 'mcq' && (
                     <motion.div
@@ -1360,15 +1384,15 @@ export function StudyConsole() {
                     <motion.div
                       initial={{ scale: 0.96, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
-                      className="p-3.5 rounded-card border bg-slate-50/80 shadow-xs space-y-3"
+                      className="p-3.5 rounded-2xl border border-slate-200/90 bg-slate-50/90 shadow-2xs space-y-3"
                     >
                       {sentenceResult ? (
                         <>
                           {/* Header: Score & Target word status */}
-                          <div className="flex items-center justify-between pb-2 border-b border-slate-200/70">
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
                             <div className="flex items-center gap-2">
                               <span
-                                className={`px-2 py-0.5 rounded text-[11px] font-extrabold flex items-center gap-1 ${
+                                className={`px-2 py-0.5 rounded-md text-[11px] font-extrabold flex items-center gap-1 ${
                                   sentenceResult.score >= 85
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : sentenceResult.score >= 60
@@ -1399,12 +1423,12 @@ export function StudyConsole() {
                           </div>
 
                           {/* Pedagogical feedback */}
-                          <p className="text-xs text-slate-700 leading-relaxed">
+                          <p className="text-xs text-slate-700 leading-relaxed font-medium">
                             {sentenceResult.feedback}
                           </p>
 
                           {/* User input display */}
-                          <div className="p-2.5 rounded-lg bg-surface-base border border-slate-200 text-xs space-y-1.5">
+                          <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 text-xs space-y-1.5 shadow-2xs">
                             <div className="flex items-center justify-between text-slate-500 text-[11px] font-medium">
                               <span>Nội dung bạn đã nhập:</span>
                               <AudioButton text={sentenceInput} dialect={settings.englishDialect} size="sm" />
@@ -1416,45 +1440,58 @@ export function StudyConsole() {
                               sentenceResult.correctedSentence.toLowerCase() !== sentenceInput.toLowerCase() && (
                                 <div className="pt-2 border-t border-slate-100 space-y-1">
                                   <div className="flex items-center justify-between text-emerald-800 font-semibold text-[11px]">
-                                    <span>Câu chuẩn đã sửa lỗi:</span>
+                                    <span>Câu chuẩn sau khi sửa lỗi:</span>
                                     <AudioButton
                                       text={sentenceResult.correctedSentence}
                                       dialect={settings.englishDialect}
                                       size="sm"
                                     />
                                   </div>
-                                  <p className="text-emerald-950 font-medium bg-emerald-50/80 p-2 rounded border border-emerald-200/70 font-serif">
+                                  <p className="text-emerald-950 font-medium bg-emerald-50/80 p-2 rounded-lg border border-emerald-200/70 font-serif">
                                     "{sentenceResult.correctedSentence}"
                                   </p>
                                 </div>
                               )}
                           </div>
 
-                          {/* Error breakdown pills */}
+                          {/* Collapsible Error Breakdown */}
                           {sentenceResult.errors.length > 0 && (
-                            <div className="space-y-1.5">
-                              <span className="text-[11px] font-bold uppercase tracking-wider text-rose-700 flex items-center gap-1">
-                                <AlertCircle className="w-3 h-3" />
-                                <span>Chi tiết điểm cần lưu ý ({sentenceResult.errors.length})</span>
-                              </span>
-                              <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                                {sentenceResult.errors.map((err, i) => (
-                                  <div
-                                    key={i}
-                                    className="p-2 rounded bg-rose-50/70 border border-rose-200/60 text-[11px] text-rose-900 space-y-0.5"
-                                  >
-                                    <div className="font-semibold">{err.message}</div>
-                                    {err.replacements.length > 0 && (
-                                      <div className="text-slate-600 flex items-center gap-1">
-                                        <span>Gợi ý thay thế:</span>
-                                        <span className="font-bold text-emerald-700">
-                                          {err.replacements.join(', ')}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
+                            <div className="rounded-xl border border-rose-200/80 bg-rose-50/40 overflow-hidden shadow-2xs">
+                              <button
+                                type="button"
+                                onClick={() => setShowErrorDetails((prev) => !prev)}
+                                className="w-full px-3 py-2 flex items-center justify-between text-xs font-semibold text-rose-800 hover:bg-rose-50/80 transition-colors"
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                  <span>Phát hiện {sentenceResult.errors.length} điểm cần lưu ý</span>
+                                </span>
+                                <span className="text-[11px] font-medium text-rose-600 flex items-center gap-0.5">
+                                  {showErrorDetails ? 'Thu gọn' : 'Xem chi tiết'}
+                                  {showErrorDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                </span>
+                              </button>
+
+                              {showErrorDetails && (
+                                <div className="px-3 pb-2.5 pt-1 space-y-1.5 border-t border-rose-200/60 bg-white/60">
+                                  {sentenceResult.errors.map((err, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="p-2 rounded-lg bg-rose-50/80 border border-rose-200/80 text-[11px] text-rose-950 space-y-0.5"
+                                    >
+                                      <div className="font-semibold text-rose-800">{err.message}</div>
+                                      {err.replacements.length > 0 && (
+                                        <div className="text-slate-600 flex items-center gap-1 flex-wrap">
+                                          <span>Gợi ý thay thế:</span>
+                                          <span className="font-bold text-emerald-700">
+                                            {err.replacements.slice(0, 3).join(', ')}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -1466,13 +1503,13 @@ export function StudyConsole() {
                                 <div className="space-y-1">
                                   <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 flex items-center gap-1">
                                     <Sparkles className="w-3 h-3" />
-                                    <span>Gợi ý cụm từ hay (Collocations / Phrases)</span>
+                                    <span>Gợi ý cụm từ hay (Collocations)</span>
                                   </span>
                                   <div className="flex flex-wrap gap-1.5">
                                     {sentenceResult.improvedPhrases.map((phrase, idx) => (
                                       <div
                                         key={idx}
-                                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-indigo-50 border border-indigo-200/80 text-[11px] text-indigo-900 font-medium"
+                                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200/80 text-[11px] text-indigo-900 font-medium"
                                       >
                                         <span>{phrase}</span>
                                         <AudioButton text={phrase} dialect={settings.englishDialect} size="sm" />
@@ -1492,7 +1529,7 @@ export function StudyConsole() {
                                     {sentenceResult.improvedSentences.map((sent, idx) => (
                                       <div
                                         key={idx}
-                                        className="flex items-center justify-between p-2 rounded-md bg-brand-primarySoft/30 border border-brand-primary/20 text-xs text-brand-ink"
+                                        className="flex items-center justify-between p-2 rounded-lg bg-brand-primarySoft/30 border border-brand-primary/20 text-xs text-brand-ink"
                                       >
                                         <span className="font-serif italic">"{sent}"</span>
                                         <AudioButton text={sent} dialect={settings.englishDialect} size="sm" />
@@ -1506,8 +1543,11 @@ export function StudyConsole() {
 
                           {/* Recommended Rating Banner */}
                           <div className="flex items-center justify-between text-[11px] pt-1 text-slate-500 border-t border-slate-200/60">
-                            <span>Gợi ý đánh giá FSRS:</span>
-                            <span className="font-bold text-brand-primary">
+                            <span className="flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-brand-primary" />
+                              <span>Gợi ý đánh giá FSRS:</span>
+                            </span>
+                            <span className="font-bold text-brand-primary bg-brand-primarySoft/80 px-2 py-0.5 rounded-md">
                               Phím {sentenceResult.suggestedRating} (
                               {sentenceResult.suggestedRating === 1
                                 ? 'Quên'
@@ -1581,7 +1621,7 @@ export function StudyConsole() {
                 </div>
 
                 {/* Back Footer: FSRS 4 Rating Choices with Animated Micro-interactions */}
-                <div className="pt-3 border-t border-slate-100 space-y-2" onClick={(e) => e.stopPropagation()}>
+                <div className="pt-3 border-t border-slate-100 space-y-1.5" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-between text-[11px] text-text-secondary px-1">
                     <span className="font-semibold text-brand-ink">
                       Đánh giá độ nhớ để FSRS lập lịch:
@@ -1591,7 +1631,7 @@ export function StudyConsole() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
                     {intervalPreviews.map((preview) => {
                       const isAiSuggested = mode === 'sentence' && sentenceResult?.suggestedRating === preview.rating;
                       const ratingStyles = {
@@ -1604,15 +1644,15 @@ export function StudyConsole() {
                       return (
                         <motion.button
                           key={preview.rating}
-                          whileHover={{ scale: 1.03 }}
-                          whileTap={{ scale: 0.96 }}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.97 }}
                           disabled={!revealReady || isGrading}
                           onClick={() => handleGrade(preview.rating)}
-                          className={`relative p-2.5 rounded-control border text-left transition-all shadow-xs flex flex-col justify-between ${
+                          className={`relative p-2 sm:p-2.5 rounded-xl border text-left transition-all shadow-xs flex flex-col justify-between ${
                             ratingStyles[preview.rating]
                           } ${
                             isAiSuggested
-                              ? 'border-brand-primary ring-2 ring-brand-primary/70 shadow-sm'
+                              ? 'border-brand-primary ring-2 ring-brand-primary/70 bg-brand-primarySoft/20 shadow-sm'
                               : 'border-slate-200'
                           } ${!revealReady || isGrading ? 'opacity-60 cursor-not-allowed' : ''}`}
                         >
@@ -1629,11 +1669,11 @@ export function StudyConsole() {
                               {preview.rating}
                             </kbd>
                           </div>
-                          <div className="mt-1 flex items-baseline justify-between">
-                            <span className="text-[10px] text-text-secondary line-clamp-1">
+                          <div className="mt-1 flex items-baseline justify-between gap-1">
+                            <span className="text-[10px] text-text-secondary truncate">
                               {preview.description}
                             </span>
-                            <span className="text-xs font-mono font-bold text-brand-ink">
+                            <span className="text-xs font-mono font-bold text-brand-ink shrink-0">
                               {preview.intervalText}
                             </span>
                           </div>
