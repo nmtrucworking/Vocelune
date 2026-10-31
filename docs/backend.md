@@ -101,6 +101,8 @@ Swagger có schemas cho các mutations chính tại `/api/docs`; JSON tại `/ap
 
 ### Study / FSRS
 
+> Mô tả chi tiết thuật toán, máy trạng thái và cơ chế bury sibling: [STUDY_ALGORITHM.md](STUDY_ALGORITHM.md).
+
 1. `GET /study/queue`: learning/relearning due → review due → new theo hạn mức ngày học. Loại suspended/buried/deleted; không tự grade backlog.
 2. `POST /study/sessions` với `{mode:"flashcard"}`.
 3. `POST /study/sessions/:id/reveal` với `{cardId}` trả revealId, cardVersion và previews. Reveal hết hạn sau 5 phút, phiên tối đa 12 giờ.

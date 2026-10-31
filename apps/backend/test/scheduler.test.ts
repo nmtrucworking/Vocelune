@@ -27,3 +27,13 @@ test('rollover compares local clock hours on the DST transition day', () => {
   assert.equal(studyDate(new Date('2026-03-08T08:30:00Z'), 'America/New_York', 4), '2026-03-08');
   assert.equal(studyDayStart(new Date('2026-03-08T08:30:00Z'), 'America/New_York', 4).toISOString(), '2026-03-08T08:00:00.000Z');
 });
+test('Easy on a new card graduates straight to review with a multi-day interval', () => {
+  const easy = review(card, 4, now, 0.9);
+  assert.equal(easy.state, 'review');
+  assert.ok(easy.scheduledDays >= 1);
+  assert.ok(easy.dueAt.getTime() - now.getTime() >= 24 * 3600 * 1000);
+});
+test('sibling burying covers every non-terminal card state', async () => {
+  const { SIBLING_STATES } = await import('../src/study/study.service');
+  assert.deepEqual([...SIBLING_STATES].sort(), ['learning', 'new', 'relearning', 'review']);
+});

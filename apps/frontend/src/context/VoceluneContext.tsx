@@ -465,7 +465,9 @@ export function VoceluneProvider({ children }: { children: React.ReactNode }) {
     const now = liveNow;
     const dueMap = new Map<string, Card>();
     for (const c of snapshot.dueCards) {
-      if (!c.suspended) dueMap.set(c.id, c);
+      if (c.suspended) continue;
+      if (c.buriedUntil && new Date(c.buriedUntil).getTime() > now) continue;
+      dueMap.set(c.id, c);
     }
     // Dynamic realtime inclusion for cards that reached dueAt
     for (const c of snapshot.cards) {

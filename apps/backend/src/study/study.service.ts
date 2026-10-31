@@ -9,6 +9,8 @@ import { review, scheduleSnapshot } from './scheduler';
 import { nextStudyDay, studyDayStart } from './time';
 
 export const reviewSchema = z.object({ sessionId: uuid, revealId: uuid, rating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), expectedCardVersion: z.number().int().min(1), responseTimeMs: z.number().int().min(0).max(300000) }).strict();
+/** Sibling cards (same vocab item) in any of these states are buried after one of them is reviewed. */
+export const SIBLING_STATES = ['new', 'learning', 'review', 'relearning'];
 @Injectable()
 export class StudyService {
   constructor(@Inject(Database) private db: Database) {}
@@ -47,10 +49,10 @@ export class StudyService {
       fresh = Array.from(freshVocabMap.values());
     }
 
+    // Learning/relearning first, then review, then new. A vocab item appears at most once per queue.
     const ordered = [...due.filter(c => c.state !== 'review'), ...due.filter(c => c.state === 'review'), ...fresh];
     const seen = new Set<string>();
     const cards = ordered.filter(c => {
-      if (c.state === 'learning' || c.state === 'relearning') return true;
       if (seen.has(c.vocabItemId)) return false;
       seen.add(c.vocabItemId); return true;
     });
@@ -121,12 +123,12 @@ export class StudyService {
       : (scheduler.parameters as any)?.w;
     const next = review(card, rating, now, scheduler.retention, weights);
     const updated = await tx.card.update({ where: { id: card.id }, data: { ...next, version: { increment: 1 }, schedulerConfigId: scheduler.id } });
-    const siblings = await tx.card.findMany({ where: { userId, vocabItemId: card.vocabItemId, id: { not: card.id }, state: { in: ['new', 'review'] }, deletedAt: null }, select: { id: true, buriedUntil: true, version: true } });
+    const siblings = await tx.card.findMany({ where: { userId, vocabItemId: card.vocabItemId, id: { not: card.id }, state: { in: SIBLING_STATES }, deletedAt: null }, select: { id: true, buriedUntil: true, version: true } });
     const reviewId = crypto.randomUUID();
     const response = { reviewId, card: cardDto(updated), scheduler: { modelVersion: scheduler.modelVersion, libraryVersion: scheduler.libraryVersion, configVersion: scheduler.version } };
     await tx.reviewLog.create({ data: { id: reviewId, userId, cardId: card.id, sessionId, clientRequestId: key, requestHash, rating, source, beforeState: card.state, afterState: next.state, beforeSnapshot: json({ ...scheduleSnapshot(card), siblings }), afterSnapshot: json(scheduleSnapshot(updated)), response: json(response), schedulerConfigId: scheduler.id, durationMs, reviewedAt: now } });
     const settings = await tx.userSettings.findUniqueOrThrow({ where: { userId } });
-    await tx.card.updateMany({ where: { userId, vocabItemId: card.vocabItemId, id: { not: card.id }, state: { in: ['new', 'review'] }, deletedAt: null }, data: { buriedUntil: nextStudyDay(now, settings.timezone, settings.dayStartHour), version: { increment: 1 } } });
+    await tx.card.updateMany({ where: { userId, vocabItemId: card.vocabItemId, id: { not: card.id }, state: { in: SIBLING_STATES }, deletedAt: null }, data: { buriedUntil: nextStudyDay(now, settings.timezone, settings.dayStartHour), version: { increment: 1 } } });
     return response;
   }
   async undo(userId: string, reviewId: string) {

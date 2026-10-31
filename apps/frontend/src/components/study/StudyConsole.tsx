@@ -45,6 +45,8 @@ export function StudyConsole() {
   const [selectedTopicGroup, setSelectedTopicGroup] = useState<string>('all');
   const [selectedDeckId, setSelectedDeckId] = useState<string>('all');
   const [isGrading, setIsGrading] = useState(false);
+  // Vocab items graded during this visit; kept out of the 'ahead'/'all' scopes so they do not bounce back.
+  const gradedVocabRef = useRef(new Set<string>());
   const [liveNow, setLiveNow] = useState(Date.now());
 
   // 1s ticker for realtime due calculation & countdowns
@@ -101,9 +103,14 @@ export function StudyConsole() {
     const cardByVocab = new Map<string, Card>();
     const vocabMap = new Map(vocabItems.map((v) => [v.id, v]));
 
+    // A word that already has a studied card must not resurface through its still-new sibling.
+    const studiedVocabIds = new Set(cards.filter((c) => c.state !== 'new').map((c) => c.vocabItemId));
+
     for (const card of cards) {
       if (card.suspended) continue;
       if (card.state !== 'new') continue;
+      if (card.buriedUntil && new Date(card.buriedUntil).getTime() > liveNow) continue;
+      if (studiedVocabIds.has(card.vocabItemId)) continue;
 
       const vocab = vocabMap.get(card.vocabItemId);
       if (!vocab) continue;
@@ -137,7 +144,7 @@ export function StudyConsole() {
         return timeA - timeB;
       }
     });
-  }, [cards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap, newSortOrder]);
+  }, [cards, vocabItems, selectedDeckId, selectedTopicGroup, deckMap, newSortOrder, liveNow]);
 
   // Cards in learning/review schedule that are not yet due (ahead of schedule, recomputed in realtime)
   const aheadCards = useMemo(() => {
@@ -150,6 +157,7 @@ export function StudyConsole() {
       if (card.state === 'new') continue; // Unlearned cards belong in scopedNewCards
       if (card.buriedUntil && new Date(card.buriedUntil).getTime() > now) continue;
       if (dueVocabIds.has(card.vocabItemId)) continue;
+      if (gradedVocabRef.current.has(card.vocabItemId)) continue; // reviewed in this visit
 
       const vocab = vocabItems.find((v) => v.id === card.vocabItemId);
       if (!vocab) continue;
@@ -368,6 +376,7 @@ export function StudyConsole() {
 
       const durationMs = Date.now() - startTime;
       const cardToGrade = currentCard;
+      gradedVocabRef.current.add(cardToGrade.vocabItemId);
 
       // 1. Advance UI immediately (asynchronous & non-blocking)
       setCompletedCount((prev) => prev + 1);

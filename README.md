@@ -40,6 +40,22 @@ Vocabulary learning involves more than collecting translations. Learners need a 
 
 > **Scope:** Vocelune is a functional software project under active development. The repository does not establish a measured improvement in learning outcomes, nor does it currently establish production deployment readiness.
 
+### How study scheduling works
+
+Each review moves a card through FSRS-6 states. Choosing **Easy** on a new card graduates it directly to `review` with an interval of at least one day. After any rating, the other cards of the same word are buried until the next study day, so a word does not return in the same session through a sibling card.
+
+```mermaid
+flowchart LR
+    A[Due and new cards] --> B[Order: learning, review, new]
+    B --> C[One card per word]
+    C --> D[Reveal answer, grade 1-4]
+    D --> E[FSRS-6 computes next due date]
+    E --> F[Bury sibling cards until next study day]
+    F --> A
+```
+
+See [Study algorithm](docs/STUDY_ALGORITHM.md) for card states, queue construction, and known limitations.
+
 ### What is implemented
 
 | Area | Capabilities |
@@ -163,6 +179,7 @@ GitHub Actions runs installation, Prisma client generation, type checks, tests, 
 
 - [Software requirements specification](docs/SRS_English_Vocabulary_Learning_Platform_v1.0.md)
 - [Backend architecture, data model & API conventions](docs/backend.md)
+- [Study algorithm: FSRS-6 scheduling, queue building & sibling burying](docs/STUDY_ALGORITHM.md)
 - [Dictionary sources, configuration & licensing](docs/DICTIONARY.md)
 - [Deployment readiness findings](docs/DEPLOY_READINESS.md)
 - [Deployment guide](docs/DEPLOYMENT.md) — verify against the readiness findings before following for production
