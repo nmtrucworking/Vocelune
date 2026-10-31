@@ -113,36 +113,114 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
     return days;
   }, [analytics?.forecastData, cards, settings.newCardsPerDay]);
 
-  // 2. Memory State Distribution (Donut Chart)
-  const stateDistributionData = useMemo(() => {
-    const counts = {
-      new: cards.filter((c) => c.state === 'new').length,
-      learning: cards.filter((c) => c.state === 'learning' || c.state === 'relearning').length,
-      review: cards.filter((c) => c.state === 'review').length,
-    };
-    const total = counts.new + counts.learning + counts.review;
+  const [distMode, setDistMode] = useState<'vocab' | 'cards'>('vocab');
 
-    return [
-      {
-        name: 'Đang ôn (Review)',
-        value: counts.review,
-        color: '#10B981',
-        pct: total > 0 ? Math.round((counts.review / total) * 100) : 0,
-      },
-      {
-        name: 'Đang học (Learning)',
-        value: counts.learning,
-        color: '#F59E0B',
-        pct: total > 0 ? Math.round((counts.learning / total) * 100) : 0,
-      },
-      {
-        name: 'Thẻ mới (New)',
-        value: counts.new,
-        color: '#5949E8',
-        pct: total > 0 ? Math.round((counts.new / total) * 100) : 0,
-      },
-    ];
+  // Group cards by vocabItemId for fast vocabulary-level lookup
+  const cardsByVocabId = useMemo(() => {
+    const map = new Map<string, typeof cards>();
+    for (const card of cards) {
+      const list = map.get(card.vocabItemId) ?? [];
+      list.push(card);
+      map.set(card.vocabItemId, list);
+    }
+    return map;
   }, [cards]);
+
+  // 2. Memory State Distribution (Donut Chart) - Supports both Vocabulary items & FSRS Cards
+  const stateDistributionData = useMemo(() => {
+    if (distMode === 'vocab') {
+      let rev = 0;
+      let learn = 0;
+      let nw = 0;
+      let susp = 0;
+
+      for (const item of vocabItems) {
+        const itemCards = cardsByVocabId.get(item.id) ?? [];
+        if (itemCards.length === 0) {
+          nw++;
+          continue;
+        }
+        const activeCards = itemCards.filter((c) => !c.suspended);
+        if (activeCards.length === 0) {
+          susp++;
+        } else if (activeCards.some((c) => c.state === 'review')) {
+          rev++;
+        } else if (activeCards.some((c) => c.state === 'learning' || c.state === 'relearning')) {
+          learn++;
+        } else {
+          nw++;
+        }
+      }
+
+      const total = vocabItems.length;
+      const list = [
+        {
+          name: 'Đang ôn (Review)',
+          value: rev,
+          color: '#10B981',
+          pct: total > 0 ? Math.round((rev / total) * 100) : 0,
+        },
+        {
+          name: 'Đang học (Learning)',
+          value: learn,
+          color: '#F59E0B',
+          pct: total > 0 ? Math.round((learn / total) * 100) : 0,
+        },
+        {
+          name: 'Từ mới (New)',
+          value: nw,
+          color: '#5949E8',
+          pct: total > 0 ? Math.round((nw / total) * 100) : 0,
+        },
+      ];
+      if (susp > 0) {
+        list.push({
+          name: 'Tạm dừng (Suspended)',
+          value: susp,
+          color: '#94A3B8',
+          pct: total > 0 ? Math.round((susp / total) * 100) : 0,
+        });
+      }
+      return { total, list, unit: 'từ' };
+    } else {
+      const activeCards = cards.filter((c) => !c.suspended);
+      const susp = cards.filter((c) => c.suspended).length;
+      const rev = activeCards.filter((c) => c.state === 'review').length;
+      const learn = activeCards.filter((c) => c.state === 'learning' || c.state === 'relearning').length;
+      const nw = activeCards.filter((c) => c.state === 'new').length;
+
+      const total = cards.length;
+      const list = [
+        {
+          name: 'Đang ôn (Review)',
+          value: rev,
+          color: '#10B981',
+          pct: total > 0 ? Math.round((rev / total) * 100) : 0,
+        },
+        {
+          name: 'Đang học (Learning)',
+          value: learn,
+          color: '#F59E0B',
+          pct: total > 0 ? Math.round((learn / total) * 100) : 0,
+        },
+        {
+          name: 'Thẻ mới (New)',
+          value: nw,
+          color: '#5949E8',
+          pct: total > 0 ? Math.round((nw / total) * 100) : 0,
+        },
+      ];
+      if (susp > 0) {
+        list.push({
+          name: 'Tạm dừng (Suspended)',
+          value: susp,
+          color: '#94A3B8',
+          pct: total > 0 ? Math.round((susp / total) * 100) : 0,
+        });
+      }
+      return { total, list, unit: 'thẻ' };
+    }
+  }, [distMode, vocabItems, cards, cardsByVocabId]);
 
   // 3. Recent 7-Day Activity Trend
   const recentActivityData = useMemo(() => {
@@ -462,33 +540,59 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
           {/* Chart 2: Memory State Donut Distribution (1 col) */}
           <div className="bg-surface-base p-5 rounded-card border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-4">
             <div>
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <h4 className="font-bold text-xs text-brand-ink flex items-center gap-1.5">
-                  <PieIcon className="w-3.5 h-3.5 text-brand-primary" />
-                  <span>Cơ cấu trí nhớ FSRS</span>
-                </h4>
-                <span className="text-[10px] text-text-secondary font-mono">
-                  {cards.length} thẻ
-                </span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-2 gap-2">
+                <div>
+                  <h4 className="font-bold text-xs text-brand-ink flex items-center gap-1.5">
+                    <PieIcon className="w-3.5 h-3.5 text-brand-primary" />
+                    <span>{distMode === 'vocab' ? 'Cơ cấu kho từ' : 'Cơ cấu trí nhớ FSRS'}</span>
+                  </h4>
+                  <p className="text-[11px] text-text-secondary mt-0.5">
+                    {distMode === 'vocab'
+                      ? `Phân bố ${stateDistributionData.total} từ vựng theo trạng thái học.`
+                      : `Phân bố ${stateDistributionData.total} thẻ mới, đang học và củng cố dài hạn.`}
+                  </p>
+                </div>
+                {/* Mode toggle */}
+                <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-[10px] font-medium border border-slate-200 shrink-0 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setDistMode('vocab')}
+                    className={`px-2 py-0.5 rounded-md transition-all ${
+                      distMode === 'vocab'
+                        ? 'bg-white text-brand-ink shadow-2xs font-semibold'
+                        : 'text-text-secondary hover:text-brand-ink'
+                    }`}
+                  >
+                    Từ vựng ({vocabItems.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDistMode('cards')}
+                    className={`px-2 py-0.5 rounded-md transition-all ${
+                      distMode === 'cards'
+                        ? 'bg-white text-brand-ink shadow-2xs font-semibold'
+                        : 'text-text-secondary hover:text-brand-ink'
+                    }`}
+                  >
+                    Thẻ ({cards.length})
+                  </button>
+                </div>
               </div>
-              <p className="text-[11px] text-text-secondary mt-1">
-                Phân bố thẻ mới, giai đoạn học lặp và củng cố dài hạn.
-              </p>
             </div>
 
             <div className="h-44 relative flex items-center justify-center">
-              {isMounted && cards.length > 0 ? (
+              {isMounted && stateDistributionData.total > 0 ? (
                 <>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={stateDistributionData}
+                        data={stateDistributionData.list}
                         innerRadius={48}
                         outerRadius={68}
                         paddingAngle={3}
                         dataKey="value"
                       >
-                        {stateDistributionData.map((entry, index) => (
+                        {stateDistributionData.list.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
@@ -501,7 +605,7 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
                           fontSize: '11px',
                         }}
                         formatter={(val: any) => [
-                          `${val ?? 0} thẻ`,
+                          `${val ?? 0} ${stateDistributionData.unit}`,
                           'Số lượng',
                         ]}
                       />
@@ -510,21 +614,21 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
                   {/* Center percentage / label */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span className="text-xl font-extrabold text-brand-ink">
-                      {cards.length}
+                      {stateDistributionData.total}
                     </span>
                     <span className="text-[9px] uppercase tracking-wider text-text-secondary font-bold">
-                      Tổng thẻ
+                      {distMode === 'vocab' ? 'Từ vựng' : 'Tổng thẻ'}
                     </span>
                   </div>
                 </>
               ) : (
-                <div className="text-xs text-slate-400 text-center">Chưa có dữ liệu thẻ</div>
+                <div className="text-xs text-slate-400 text-center">Chưa có dữ liệu</div>
               )}
             </div>
 
             {/* Custom Legend */}
             <div className="space-y-1.5 pt-2 border-t border-slate-100 text-xs">
-              {stateDistributionData.map((item) => (
+              {stateDistributionData.list.map((item) => (
                 <div key={item.name} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span
@@ -534,7 +638,7 @@ export function DashboardView({ onOpenQuickAdd }: DashboardViewProps) {
                     <span className="text-slate-600 font-medium text-[11px]">{item.name}</span>
                   </div>
                   <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                    <span className="font-bold text-brand-ink">{item.value}</span>
+                    <span className="font-bold text-brand-ink">{item.value} {stateDistributionData.unit}</span>
                     <span className="text-text-secondary">({item.pct}%)</span>
                   </div>
                 </div>
