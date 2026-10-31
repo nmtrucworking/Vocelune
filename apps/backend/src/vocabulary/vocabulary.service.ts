@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { Database, json, Tx } from '../common/db';
 import { fail, normalized, pagination, uuid } from '../common/http';
 import { cardDto, deckDto, publicDeckDto, vocabDto } from '../common/serializers';
-import { hash, passwordHash } from '../identity/security';
+import { hash, passwordHash, secret } from '../identity/security';
 import { redactForSharing } from '../integrations/dictionary/license-policy';
 import { OFFICIAL_DECKS } from './official-decks';
 import { parameters, MODEL_VERSION, LIBRARY_VERSION } from '../study/scheduler';
@@ -218,8 +218,8 @@ export class VocabularyService {
           data: {
             email,
             displayName: 'Ban Biên Tập Vocelune',
-            passwordHash: await passwordHash('VoceluneOfficial2026!'),
-            role: 'admin',
+            passwordHash: await passwordHash(secret()),
+            role: 'editorial',
             settings: {
               create: {
                 emailReminderStudy: false,

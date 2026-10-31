@@ -23,6 +23,8 @@ import { DictionaryService } from './integrations/dictionary.service';
 import { MediaService } from './integrations/media.service';
 import { AnalyticsController } from './analytics/analytics.controller';
 import { AnalyticsService } from './analytics/analytics.service';
+import { AdminController } from './admin/admin.controller';
+import { AdminService } from './admin/admin.service';
 import { MaintenanceService } from './common/maintenance.service';
 
 @Module({ controllers: [VocabularyController], providers: [VocabularyService], exports: [VocabularyService] })
@@ -39,12 +41,14 @@ export class TestsModule {}
 export class TransferModule {}
 @Module({ imports: [StudyModule, TestsModule], controllers: [AnalyticsController], providers: [AnalyticsService] })
 export class AnalyticsModule {}
+@Module({ imports: [VocabularyModule], controllers: [AdminController], providers: [AdminService] })
+export class AdminModule {}
 @Controller('health')
 class HealthController {
   constructor(@Inject(Database) private db: Database) {}
   @Public() @Get('live') live() { return { status: 'ok' }; }
   @Public() @Get('ready') async ready() { await this.db.$queryRaw`SELECT 1`; return { status: 'ok', database: 'ready' }; }
 }
-@Module({ imports: [DatabaseModule, ThrottlerModule.forRoot([{ ttl: 60000, limit: 240 }]), IdentityModule, VocabularyModule, StudyModule, TestsModule, TransferModule, IntegrationsModule, AnalyticsModule],
+@Module({ imports: [DatabaseModule, ThrottlerModule.forRoot([{ ttl: 60000, limit: 240 }]), IdentityModule, VocabularyModule, StudyModule, TestsModule, TransferModule, IntegrationsModule, AnalyticsModule, AdminModule],
   controllers: [HealthController], providers: [{ provide: APP_GUARD, useClass: SessionGuard }, { provide: APP_GUARD, useClass: UserThrottlerGuard }, MaintenanceService] })
 export class AppModule {}

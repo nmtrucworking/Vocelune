@@ -11,6 +11,7 @@ model User {
   passwordHash String
   displayName String @db.VarChar(100)
   role String @default("learner")
+  disabledAt DateTime? @db.Timestamptz(3)
   avatarAssetId String? @db.Uuid
   avatarAsset MediaAsset? @relation("UserAvatar", fields: [avatarAssetId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now()) @db.Timestamptz(3)
@@ -29,6 +30,7 @@ model User {
   media MediaAsset[] @relation("UserMedia")
   outbox EmailOutbox[]
   @@index([avatarAssetId])
+  @@index([role])
 }
 model UserSettings {
   userId String @id @db.Uuid
@@ -330,6 +332,8 @@ model AuditLog {
   metadata Json?
   occurredAt DateTime @default(now()) @db.Timestamptz(3)
   @@index([actorId, occurredAt])
+  @@index([occurredAt])
+  @@index([action, resourceId, occurredAt])
 }
 model ProviderUsage {
   id String @id @default(uuid()) @db.Uuid

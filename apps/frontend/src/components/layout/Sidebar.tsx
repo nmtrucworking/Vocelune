@@ -15,6 +15,7 @@ import {
   Flame,
   PanelLeftClose,
   PanelLeftOpen,
+  ShieldCheck,
 } from 'lucide-react';
 import { Logo } from './Logo';
 import { useVocelune } from '@/context/VoceluneContext';
@@ -27,7 +28,7 @@ interface SidebarProps {
 
 export function Sidebar({ onCloseMobile, collapsed = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
-  const { dueCards, streak, vocabItems } = useVocelune();
+  const { dueCards, streak, vocabItems, user } = useVocelune();
 
   const navItems = [
     {
@@ -75,6 +76,7 @@ export function Sidebar({ onCloseMobile, collapsed = false, onToggleCollapse }: 
       icon: Settings,
       badge: null,
     },
+    ...(user?.role === 'admin' ? [{ href: '/admin', label: 'Quản trị', icon: ShieldCheck, badge: null }] : []),
   ];
 
   return (

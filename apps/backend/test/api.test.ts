@@ -44,6 +44,38 @@ test('health, auth, CSRF, origin checks and private data isolation', async () =>
   await get('/admin/health/operations', alice).expect(403);
 });
 
+test('admin console: role gate, user suspension, last-admin and self protection, audit trail', async () => {
+  const boss = await register('boss'), victim = await register('victim');
+  await db.user.update({ where: { id: boss.userId }, data: { role: 'admin' } });
+  for (const path of ['/admin/stats', '/admin/users', '/admin/decks', '/admin/audit-logs']) await get(path, alice).expect(403);
+  await http.patch(`/api/v1/admin/users/${victim.userId}`).set(auth(alice)).send({ disabled: true }).expect(403);
+  assert.ok((await get('/admin/stats', boss).expect(200)).body.users >= 4);
+  const list = (await get('/admin/users?q=victim', boss).expect(200)).body;
+  assert.equal(list.items.length, 1); assert.equal(list.items[0].email, 'victim@example.test');
+  await http.patch(`/api/v1/admin/users/${boss.userId}`).set(auth(boss)).send({ role: 'learner' }).expect(409);
+  await http.patch(`/api/v1/admin/users/${victim.userId}`).set(auth(boss)).send({ role: 'superuser' }).expect(422);
+  await http.patch(`/api/v1/admin/users/${victim.userId}`).set(auth(boss)).send({ disabled: true }).expect(200);
+  await get('/bootstrap', victim).expect(401);
+  await http.post('/api/v1/auth/login').send({ email: 'victim@example.test', password }).expect(403);
+  await http.patch(`/api/v1/admin/users/${victim.userId}`).set(auth(boss)).send({ disabled: false }).expect(200);
+  await http.post('/api/v1/auth/login').send({ email: 'victim@example.test', password }).expect(201);
+  await http.patch(`/api/v1/admin/users/${victim.userId}`).set(auth(boss)).send({ role: 'admin' }).expect(200);
+  await http.patch(`/api/v1/admin/users/${victim.userId}`).set(auth(boss)).send({ role: 'learner' }).expect(200);
+  const logs = (await get('/admin/audit-logs?action=admin.user', boss).expect(200)).body.items;
+  assert.ok(logs.length >= 4); assert.equal(logs[0].actor.email, 'boss@example.test');
+});
+
+test('per-account login lockout after repeated failures', async () => {
+  const { hash } = await import('../src/identity/security');
+  await register('locktarget');
+  await http.post('/api/v1/auth/login').send({ email: 'locktarget@example.test', password: 'wrong-long-password' }).expect(401);
+  // Seed the remaining failures directly: the per-IP throttle would otherwise trip first.
+  await db.auditLog.createMany({ data: Array.from({ length: 10 }, () => ({ action: 'auth.login_failed', resourceId: hash('locktarget@example.test') })) });
+  await http.post('/api/v1/auth/login').send({ email: 'locktarget@example.test', password }).expect(429);
+  await db.auditLog.deleteMany({ where: { action: 'auth.login_failed' } });
+  await http.post('/api/v1/auth/login').send({ email: 'locktarget@example.test', password }).expect(201);
+});
+
 test('same spelling supports different POS and senses; duplicate creation and unsafe CEFR claims rejected', async () => {
   const second = await createWord(alice, 'bank', 'bờ sông');
   const verb = await createWord(alice, 'bank', 'gửi tiền', { partOfSpeech: 'verb' });
@@ -149,7 +181,9 @@ test('import preview validates rows, keeps senses, skips examples, retries once 
   const retry = (await post('/imports', alice, payload).set('Idempotency-Key', key).expect(201)).body;
   assert.equal(preview.id, retry.id);
   await post('/imports', alice, { ...payload, rows: rows.slice(0, 1) }).set('Idempotency-Key', key).expect(409);
-  const result = (await post(`/imports/${preview.id}/commit`, alice).expect(201)).body;
+  let result = (await post(`/imports/${preview.id}/commit`, alice).expect(201)).body;
+  // Commit runs in-process asynchronously; poll until the job settles.
+  for (let i = 0; i < 50 && result.status !== 'completed'; i++) { await new Promise(r => setTimeout(r, 100)); result = (await get(`/imports/${preview.id}`, alice).expect(200)).body; }
   assert.equal(result.status, 'completed'); assert.deepEqual(result.result, { created: 3, updated: 0, skipped: 2, failed: 1 });
   const repeated = (await post(`/imports/${preview.id}/commit`, alice).expect(201)).body;
   assert.deepEqual(repeated.result, result.result);
@@ -180,10 +214,10 @@ test('dictionary is explicit about missing credentials and never fabricates CEFR
 test('password reset tokens are encrypted, single-use, revoke all sessions; account deletion cascades', async () => {
   const charlie = await register('charlie');
   await post('/auth/password/forgot', charlie, { email: 'charlie@example.test' }).expect(201);
-  const outbox = await db.emailOutbox.findFirstOrThrow({ where: { userId: charlie.userId } });
+  const outbox = await db.emailOutbox.findFirstOrThrow({ where: { userId: charlie.userId, status: 'pending', text: { not: '' } }, orderBy: { createdAt: 'desc' } });
   assert.ok(!outbox.text.includes('token='));
   const { decryptEmail } = await import('../src/common/crypto');
-  const token = new URL(decryptEmail(outbox.text).split(': ').slice(1).join(': ')).hash.split('token=')[1];
+  const token = (JSON.parse(decryptEmail(outbox.text)).text as string).match(/#token=([A-Za-z0-9_-]+)/)![1];
   const newPassword = 'A-new-strong-test-password';
   await http.post('/api/v1/auth/password/reset').send({ token, password: newPassword }).expect(201);
   await get('/me', charlie).expect(401);

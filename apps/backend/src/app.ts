@@ -12,6 +12,8 @@ import { ErrorFilter } from './common/http';
 
 export async function createApp() {
   const app = await NestFactory.create(AppModule, { bodyParser: false, logger: config.NODE_ENV === 'test' ? false : ['error', 'warn', 'log'] });
+  // Behind Render's single reverse proxy: needed so rate limits key on the real client IP.
+  if (config.NODE_ENV === 'production') app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.use(helmet());
   app.use(jsonBody({ limit: '10mb' }));
   app.use(cookieParser());
@@ -40,8 +42,11 @@ export async function createApp() {
   const swaggerConfig = new DocumentBuilder().setTitle('Vocelune API').setVersion('1.0.0')
     .setDescription('Cookie sessions; mutations require X-CSRF-Token. Reviews and imports require Idempotency-Key. Domain request schemas and examples: docs/backend.md. Scheduler: ts-fsrs 5.4.2 / FSRS-6.')
     .addCookieAuth(config.NODE_ENV === 'production' ? '__Host-vocelune_session' : 'vocelune_session').build();
-  const document = enrichOpenApi(SwaggerModule.createDocument(app, swaggerConfig));
-  SwaggerModule.setup('api/docs', app, document, { jsonDocumentUrl: 'api/openapi.json' });
+  // Do not publish the API surface in production.
+  if (config.NODE_ENV !== 'production') {
+    const document = enrichOpenApi(SwaggerModule.createDocument(app, swaggerConfig));
+    SwaggerModule.setup('api/docs', app, document, { jsonDocumentUrl: 'api/openapi.json' });
+  }
   await app.init();
   return app;
 }

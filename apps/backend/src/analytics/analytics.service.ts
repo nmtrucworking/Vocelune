@@ -110,6 +110,7 @@ export class AnalyticsService {
         id: user.id,
         email: user.email,
         displayName: user.displayName,
+        role: user.role,
         avatarAssetId: hasAvatar ? user.avatarAssetId : null,
         avatarUrl: hasAvatar ? `/api/v1/users/${user.id}/avatar?v=${user.avatarAssetId}` : null,
       },

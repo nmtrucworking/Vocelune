@@ -23,6 +23,9 @@ export const settingsSchema = z.object({
   soundEnabled: z.boolean().optional(), autoPronounce: z.boolean().optional(), language: z.enum(['vi', 'en']).optional(), theme: z.enum(['light', 'dark', 'system']).optional(),
   emailReminderStudy: z.boolean().optional(), emailDailySummary: z.boolean().optional(),
 }).strict();
+// Per-account brute-force guard (in addition to the per-IP throttle), stored in the DB so it survives restarts
+// and is shared by every instance: 10 failures / 15 min lock the email.
+const LOGIN_WINDOW_MS = 15 * 60000, LOGIN_MAX_FAILURES = 10, LOGIN_FAILED = 'auth.login_failed';
 @Injectable()
 export class IdentityService {
   constructor(@Inject(Database) private db: Database) {}
@@ -89,10 +92,19 @@ export class IdentityService {
   }
   async login(body: unknown) {
     const data = credentials.parse(body);
+    const key = hash(data.email), since = new Date(Date.now() - LOGIN_WINDOW_MS);
+    const failures = await this.db.auditLog.count({ where: { action: LOGIN_FAILED, resourceId: key, occurredAt: { gte: since } } });
+    if (failures >= LOGIN_MAX_FAILURES) fail(429, 'TOO_MANY_ATTEMPTS', 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau ít phút.');
     const user = await this.db.user.findUnique({ where: { email: data.email } });
     // Run KDF for unknown users too, avoiding the fast account-enumeration path.
     const ok = await passwordMatches(data.password, user?.passwordHash ?? 'scrypt:00000000000000000000000000000000:' + '00'.repeat(64));
-    if (!user || !ok) fail(401, 'INVALID_CREDENTIALS', 'Email hoặc mật khẩu không chính xác.');
+    if (!user || !ok) {
+      await this.db.auditLog.create({ data: { action: LOGIN_FAILED, resourceId: key } });
+      await this.db.auditLog.deleteMany({ where: { action: LOGIN_FAILED, occurredAt: { lt: since } } });
+      fail(401, 'INVALID_CREDENTIALS', 'Email hoặc mật khẩu không chính xác.');
+    }
+    await this.db.auditLog.deleteMany({ where: { action: LOGIN_FAILED, resourceId: key } });
+    if (user.disabledAt) fail(403, 'ACCOUNT_DISABLED', 'Tài khoản đã bị khóa.');
     return this.createSession(user.id);
   }
   async me(userId: string) {
@@ -238,6 +250,8 @@ export class IdentityService {
       // Preserve media cleanup keys without keeping user content or identifying data.
       const assets = await tx.mediaAsset.findMany({ where: { userId } });
       for (const asset of assets) await tx.auditLog.create({ data: { action: 'media.cleanup', resourceId: asset.objectKey } });
+      // Admin actions stay as an accountability record, detached from the deleted identity.
+      await tx.auditLog.updateMany({ where: { actorId: userId, action: { startsWith: 'admin.' } }, data: { actorId: null } });
       await tx.auditLog.deleteMany({ where: { actorId: userId } });
       await tx.providerUsage.deleteMany({ where: { userId } });
       await tx.user.delete({ where: { id: userId } });

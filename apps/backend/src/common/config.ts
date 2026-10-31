@@ -71,19 +71,13 @@ export function getAllowedOrigins(): string[] {
 export function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true;
   const normalized = origin.replace(/\/+$/, '');
-  const allowed = getAllowedOrigins();
-  if (allowed.includes(normalized)) return true;
-
-  try {
-    const parsed = new URL(normalized);
-    // Allow localhost/127.0.0.1 on any port
-    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') return true;
-    // Allow production custom domain and subdomains
-    if (parsed.hostname === 'vocelune.nguyenminhtruc.site' || parsed.hostname.endsWith('.nguyenminhtruc.site')) return true;
-    // Allow onrender and pages.dev subdomains
-    if (parsed.hostname.endsWith('.onrender.com') || parsed.hostname.endsWith('.pages.dev')) return true;
-  } catch {
-    return false;
+  if (getAllowedOrigins().includes(normalized)) return true;
+  // Local development only: any localhost port. Never trust shared hosting suffixes (onrender.com, pages.dev, ...).
+  if (config.NODE_ENV !== 'production') {
+    try {
+      const parsed = new URL(normalized);
+      return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
+    } catch { return false; }
   }
   return false;
 }

@@ -41,6 +41,10 @@ npm run dev
 
 Đăng ký trên UI; không có tài khoản/password mặc định. `npm run db:seed` chỉ chạy khi đã chủ động đặt `SEED_EMAIL` và `SEED_PASSWORD` trong `.env`; seed không tạo review, điểm hoặc nội dung từ điển giả.
 
+### Quản trị (admin)
+
+Đặt thêm `SEED_ROLE=admin` rồi chạy `npm run db:seed` để tạo/nâng quyền tài khoản quản trị. Quản trị viên truy cập `/admin` trên frontend; API nằm dưới `/api/v1/admin/*` (`stats`, `users`, `decks`, `audit-logs`, `health/operations`). Khóa tài khoản và đổi vai trò sẽ thu hồi mọi phiên đăng nhập; không thể tự đổi vai trò/khóa chính mình hoặc hạ quyền quản trị viên cuối cùng. Mọi thao tác đều ghi vào `AuditLog`. Tài khoản `editorial@vocelune.com` dùng vai trò `editorial` (không đăng nhập được).
+
 LocalStorage cũ không bị xóa hoặc tự tải lên tài khoản. Backend mới bắt đầu với kho riêng rỗng; có thể nhập nội dung sở hữu qua CSV/XLSX. Web hiện tải snapshot thư viện để dùng lại các màn hình có sẵn; endpoint `/vocabulary` hỗ trợ cursor cho client cần tải dần. Bootstrap giới hạn 10.000 review logs và 100 test reports; tổng hợp server không lấy các giới hạn này làm mẫu số retention.
 
 ## Authentication và API conventions

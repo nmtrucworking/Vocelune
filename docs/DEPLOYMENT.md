@@ -68,8 +68,6 @@ Vocelune sử dụng Prisma ORM kết nối với PostgreSQL trên Supabase.
    [
      {
        "AllowedOrigins": [
-         "https://*.onrender.com",
-         "https://*.pages.dev",
          "https://yourdomain.com",
          "http://localhost:3000"
        ],

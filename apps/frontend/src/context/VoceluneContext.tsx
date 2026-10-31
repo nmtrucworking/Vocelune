@@ -5,7 +5,7 @@ import { INITIAL_SETTINGS } from '@/lib/seed-data';
 import { api, post, ApiError } from '@/lib/api';
 import { useNotification } from '@/context/NotificationContext';
 
-type User = { id: string; email: string; displayName: string; avatarAssetId?: string | null; avatarUrl?: string | null };
+type User = { id: string; email: string; displayName: string; role?: string; avatarAssetId?: string | null; avatarUrl?: string | null };
 type Overview = { forecastData: { day: string; cards: number }[]; forgettingCurveData: { day: string; retrievability: number; threshold: number }[]; averageStability: number; streak: number; observedRetention: number | null; sampleSize: number; todayReviewsCount: number; activityHeatmap: DailyActivity[]; weakWords: { vocab: VocabItem; lapses: number; reps: number }[] };
 type Snapshot = { user: User; vocabItems: VocabItem[]; decks: Deck[]; cards: Card[]; dueCards: Card[]; reviewLogs: ReviewLog[]; testAttempts: TestAttempt[]; settings: UserSettings; overview: Overview };
 interface VoceluneContextType {

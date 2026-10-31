@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Database } from '../common/db';
 import { config } from '../common/config';
 import { fail, uuid } from '../common/http';
+import { safeFetch, sniffImageMime } from '../common/safe-fetch';
 @Injectable()
 export class MediaService {
   private client?: S3Client;
@@ -170,20 +171,10 @@ export class MediaService {
   }
 
   async fetchImageAsDataUrl(imageUrl: string) {
-    const parsed = new URL(imageUrl);
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      fail(400, 'INVALID_URL', 'URL ảnh không hợp lệ.');
-    }
-    const res = await fetch(imageUrl, {
-      headers: { 'User-Agent': 'Vocelune/1.0 (study@vocelune.com)' },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) fail(400, 'FETCH_FAILED', 'Không thể tải ảnh từ liên kết.');
-    const contentType = res.headers.get('content-type') || 'image/jpeg';
-    const arrayBuffer = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    if (buffer.length > 5 * 1024 * 1024) fail(422, 'FILE_TOO_LARGE', 'Ảnh vượt quá kích thước 5MB.');
-    return { dataUrl: `data:${contentType};base64,${buffer.toString('base64')}` };
+    const { buffer } = await safeFetch(imageUrl, { maxBytes: 5 * 1024 * 1024, headers: { 'User-Agent': 'Vocelune/1.0 (study@vocelune.com)', Accept: 'image/png,image/jpeg,image/webp' } });
+    const mime = sniffImageMime(buffer);
+    if (!mime) fail(422, 'UNSUPPORTED_IMAGE', 'Chỉ hỗ trợ ảnh PNG, JPEG hoặc WebP.');
+    return { dataUrl: `data:${mime};base64,${buffer.toString('base64')}` };
   }
 
   async cleanup() {

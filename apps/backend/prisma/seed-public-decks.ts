@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import { passwordHash } from '../src/identity/security';
+import { passwordHash, secret } from '../src/identity/security';
 import { parameters, MODEL_VERSION, LIBRARY_VERSION } from '../src/study/scheduler';
 import { json } from '../src/common/db';
 import { hash } from '../src/identity/security';
@@ -267,8 +267,8 @@ async function seed() {
       data: {
         email,
         displayName: 'Ban Biên Tập Vocelune',
-        passwordHash: await passwordHash('VoceluneOfficial2026!'),
-        role: 'admin',
+        passwordHash: await passwordHash(secret()),
+        role: 'editorial',
         settings: {
           create: {
             emailReminderStudy: false,

@@ -44,6 +44,7 @@ export class SessionGuard implements CanActivate {
     if (typeof token !== 'string') fail(401, 'UNAUTHENTICATED', 'Vui lòng đăng nhập.');
     const session = await this.db.authSession.findUnique({ where: { tokenHash: hash(token) }, include: { user: true } });
     if (!session || session.revokedAt || session.expiresAt <= new Date()) fail(401, 'UNAUTHENTICATED', 'Phiên đăng nhập đã hết hạn.');
+    if (session.user.disabledAt) fail(403, 'ACCOUNT_DISABLED', 'Tài khoản đã bị khóa.');
     if (mutating) {
       const csrf = req.headers['x-csrf-token'];
       if (typeof csrf !== 'string' || hash(csrf) !== session.csrfHash) fail(403, 'CSRF_INVALID', 'Mã bảo vệ phiên không hợp lệ.');
